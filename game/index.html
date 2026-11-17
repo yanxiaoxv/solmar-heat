@@ -3,17 +3,93 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<title>Solmar Heat — an open-world day in Solmar Bay</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #79b5d9; font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; }
+  #hud-top-left { position: absolute; top: 14px; left: 16px; max-width: 430px; }
+  #hud-objective { background: rgba(10, 24, 38, 0.62); border-left: 4px solid #ffd23f; padding: 8px 12px; font-size: 15px; line-height: 1.35; border-radius: 0 8px 8px 0; text-shadow: 0 1px 2px #000; }
+  #hud-message { margin-top: 10px; background: rgba(190, 60, 40, 0.78); padding: 7px 12px; font-size: 15px; border-radius: 8px; display: inline-block; }
+  #hud-message:empty { display: none; }
+  #hud-top-right { position: absolute; top: 12px; right: 16px; text-align: right; }
+  #hud-stars { font-size: 26px; letter-spacing: 3px; min-height: 32px; text-shadow: 0 2px 4px rgba(0,0,0,0.6); }
+  #hud-cash { font-size: 24px; font-weight: bold; color: #8dff9a; text-shadow: 0 2px 4px rgba(0,0,0,0.65); }
+  #hud-clock { font-size: 14px; opacity: 0.92; text-shadow: 0 1px 3px #000; }
+  #hud-bars { margin-top: 6px; width: 170px; margin-left: auto; }
+  .bar { height: 9px; background: rgba(0,0,0,0.55); border-radius: 5px; overflow: hidden; margin-top: 4px; border: 1px solid rgba(255,255,255,0.35); }
+  #hud-health-fill { height: 100%; background: linear-gradient(90deg, #ff5f6d, #ffc371); width: 100%; }
+  #hud-armour-fill { height: 100%; background: #6ec3ff; width: 0%; }
+  #hud-bottom-left { position: absolute; left: 16px; bottom: 16px; }
+  #minimap { width: 188px; height: 188px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.75); box-shadow: 0 4px 18px rgba(0,0,0,0.45); background: #274d2e; }
+  #hud-bottom-right { position: absolute; right: 20px; bottom: 18px; text-align: right; }
+  #hud-speed { font-size: 34px; font-weight: bold; text-shadow: 0 2px 5px rgba(0,0,0,0.7); }
+  #hud-prompt { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); background: rgba(10,24,38,0.72); padding: 9px 18px; border-radius: 20px; font-size: 17px; }
+  #hud-prompt:empty { display: none; }
+  .panel-screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(255,140,66,0.25), rgba(10,30,55,0.55)); z-index: 5; }
+  .panel { background: rgba(8, 22, 38, 0.82); border: 1px solid rgba(255,210,63,0.5); border-radius: 16px; padding: 34px 44px; max-width: 620px; color: #fff; text-align: center; box-shadow: 0 18px 60px rgba(0,0,0,0.5); }
+  .panel h1 { margin: 0 0 4px; font-size: 52px; letter-spacing: 2px; color: #ffd23f; text-shadow: 0 3px 0 #c2432e, 0 6px 18px rgba(0,0,0,0.6); font-style: italic; }
+  .panel h2 { margin: 0 0 14px; font-size: 26px; color: #ffd23f; }
+  .panel p { font-size: 15.5px; line-height: 1.55; color: #dcecf7; }
+  .panel .controls { font-size: 13.5px; color: #a9c6da; line-height: 1.7; }
+  .panel button { pointer-events: auto; margin-top: 16px; background: linear-gradient(180deg, #ffd23f, #ff8c42); border: none; color: #40260a; font-size: 19px; font-weight: bold; padding: 12px 38px; border-radius: 24px; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
+  .panel button:hover { filter: brightness(1.08); }
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="game" aria-label="Solmar Heat: explore Solmar Bay on foot and by car"></canvas>
 <p id="status" role="status" aria-live="polite"></p>
+
+<div id="hud" style="display:none">
+  <div id="hud-top-left">
+    <div id="hud-objective"></div>
+    <div id="hud-message"></div>
+  </div>
+  <div id="hud-top-right">
+    <div id="hud-stars"></div>
+    <div id="hud-cash">$250</div>
+    <div id="hud-clock">08:00</div>
+    <div id="hud-bars">
+      <div class="bar"><div id="hud-health-fill"></div></div>
+      <div class="bar"><div id="hud-armour-fill"></div></div>
+    </div>
+  </div>
+  <div id="hud-bottom-left">
+    <canvas id="minimap" width="188" height="188" aria-label="Minimap of Solmar Bay"></canvas>
+  </div>
+  <div id="hud-bottom-right">
+    <div id="hud-speed"></div>
+  </div>
+  <div id="hud-prompt"></div>
+</div>
+
+<div id="menu" class="panel-screen">
+  <div class="panel">
+    <h1>SOLMAR HEAT</h1>
+    <p><strong>Solmar Bay, one long hot summer.</strong> Nico Vega runs errands for half the
+    marina and owes favours to the other half. Walk the avenues, borrow a car, keep the
+    patrol bored — and when a job flashes gold on your map, take it. Five jobs stand
+    between Nico and owning the Rayo Garage outright.</p>
+    <p class="controls">WASD / arrows — move &amp; drive &nbsp;•&nbsp; Mouse — look (click the game first)<br>
+    E — get in / out of a car &nbsp;•&nbsp; Shift — run &nbsp;•&nbsp; Space — handbrake<br>
+    Esc / P — pause &amp; save &nbsp;•&nbsp; Left mouse — shove / attack (M2 combat)</p>
+    <button id="menu-start">Start the day</button>
+  </div>
+</div>
+
+<div id="pause" class="panel-screen" style="display:none">
+  <div class="panel">
+    <h2>Paused — progress saved</h2>
+    <p>Your cash, reputation and story progress are stored on this device.
+    The bay will wait. It is good at that.</p>
+    <button id="pause-resume">Back to the streets</button>
+  </div>
+</div>
+
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

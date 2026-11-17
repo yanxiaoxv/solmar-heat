@@ -1,134 +1,158 @@
-// Boot and the one loop: input is read every frame, the world advances in fixed 1/60 s steps
-// (several in a slow frame, none in a fast one), and the renderer paints what is there. The game
-// moves between four screens: title, play, paused and game over.
-//
-// ?seed=N fixes the falling pattern. ?shot=start|play|end (with &seed=N) stages that scene
-// instead of running the loop, paints it twice and sets window.__shotReady for a screenshot.
-import { BEST_KEY, LIVES, STEP } from './config.js';
-import { createRandom } from './random.js';
-import { createWorld, EVENT_HIT, EVENT_OVER } from './world.js';
-import { ACTION_CONFIRM, ACTION_PAUSE, createInput } from './input.js';
-import { createRenderer, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
-import { stageShot } from './shots.js';
+// Solmar Heat — boot and main loop. Builds the three.js scene (warm bay
+// light, fog, procedural city), wires input, world simulation, follow camera
+// and HUD together, and runs the menu / play / pause flow. With ?shot=<name>
+// it stages a deterministic scene for screenshots instead of starting play.
 
-/** The longest frame the loop catches up on; a longer stall (a hidden tab) is dropped, not replayed. */
-const MAX_FRAME = 0.25;
+import * as THREE from 'three';
+import { createGameState, loadSave, applySave, writeSave, MODE_MENU, MODE_PAUSED, MODE_FOOT, MODE_DRIVE } from './state.js';
+import { createInput, ACTION_INTERACT, ACTION_PAUSE, ACTION_CONFIRM } from './input.js';
+import { createWorld, createSunlight } from './world.js';
+import { FollowCamera } from './camera.js';
+import { createHud } from './hud.js';
+import { stageShot } from './shots.js';
+import { createRenderer, createScene, createCamera } from './render.js';
 
 const params = new URLSearchParams(window.location.search);
-const shot = params.get('shot');
+const shotName = params.get('shot');
 const seedParam = Number.parseInt(params.get('seed') ?? '', 10);
-const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() * 4294967296);
+const seed = Number.isInteger(seedParam) ? seedParam : 7;
 
 const canvas = document.getElementById('game');
-const status = document.getElementById('status');
-const world = createWorld(createRandom(seed));
 const renderer = createRenderer(canvas);
+const scene = createScene();
+const camera3d = createCamera();
+createSunlight(scene);
 
-function readBest() {
-  try {
-    return Number.parseInt(window.localStorage.getItem(BEST_KEY) ?? '0', 10) || 0;
-  } catch {
-    return 0;
+const state = createGameState();
+applySave(state, loadSave());
+const world = createWorld(scene, seed);
+const followCam = new FollowCamera(camera3d);
+const hud = createHud();
+const input = createInput(canvas);
+
+const menuEl = document.getElementById('menu');
+const pauseEl = document.getElementById('pause');
+const startButton = document.getElementById('menu-start');
+const resumeButton = document.getElementById('pause-resume');
+
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera3d.aspect = w / h;
+  camera3d.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+let previousMode = MODE_FOOT;
+
+function setMode(mode) {
+  state.mode = mode;
+  menuEl.style.display = mode === MODE_MENU ? 'flex' : 'none';
+  pauseEl.style.display = mode === MODE_PAUSED ? 'flex' : 'none';
+  hud.setVisible(mode === MODE_FOOT || mode === MODE_DRIVE);
+  if (mode === MODE_FOOT || mode === MODE_DRIVE) input.requestPointerLock();
+  else input.releasePointerLock();
+}
+
+function startPlay() {
+  previousMode = MODE_FOOT;
+  setMode(MODE_FOOT);
+  followCam.snapBehind(world.player.heading);
+}
+
+startButton.addEventListener('click', startPlay);
+resumeButton.addEventListener('click', () => setMode(previousMode));
+canvas.addEventListener('click', () => {
+  if (state.mode === MODE_FOOT || state.mode === MODE_DRIVE) input.requestPointerLock();
+});
+
+function handleActions() {
+  const actions = input.takeActions();
+  if (actions & ACTION_CONFIRM && state.mode === MODE_MENU) startPlay();
+  if (actions & ACTION_PAUSE) {
+    if (state.mode === MODE_FOOT || state.mode === MODE_DRIVE) {
+      previousMode = state.mode;
+      setMode(MODE_PAUSED);
+      writeSave(state);
+    } else if (state.mode === MODE_PAUSED) {
+      setMode(previousMode);
+    }
+  }
+  if (actions & ACTION_INTERACT && (state.mode === MODE_FOOT || state.mode === MODE_DRIVE)) {
+    const before = state.mode;
+    if (world.handleInteract(state)) {
+      setMode(state.mode);
+      if (state.mode === MODE_DRIVE && world.currentCar) followCam.snapBehind(world.currentCar.heading);
+      void before;
+    }
   }
 }
 
-function saveBest(value) {
-  try {
-    window.localStorage.setItem(BEST_KEY, String(value));
-  } catch {
-    // Storage can be off (private windows): the best score then lasts this visit only.
+function frame(now, last, view) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  handleActions();
+  if (state.mode === MODE_FOOT || state.mode === MODE_DRIVE) {
+    state.playSeconds += dt;
+    if (state.messageTimer > 0) state.messageTimer -= dt;
+    const mouse = input.takeMouseDelta();
+    followCam.orbit(mouse.x, mouse.y);
+    const nextView = world.update(dt, state, input, followCam.yaw);
+    followCam.update(dt, world.focusPosition(state), state.mode === MODE_DRIVE);
+    hud.update(state, nextView);
+    renderer.render(scene, camera3d);
+    requestAnimationFrame((t) => frame(t, now, nextView));
+  } else {
+    // Menu and pause keep the world breathing gently behind the panels.
+    world.city.update(dt);
+    for (const person of world.pedestrians) person.update(dt * 0.4, null);
+    followCam.update(dt, world.focusPosition(state), false);
+    renderer.render(scene, camera3d);
+    requestAnimationFrame((t) => frame(t, now, view));
   }
 }
 
 function runShot(name) {
-  const scene = stageShot(name, world);
-  let painted = 0;
-  function paint() {
-    renderer.draw(world.state, scene.screen, scene.best);
-    painted += 1;
-    if (painted < 2) requestAnimationFrame(paint);
-    else window.__shotReady = true;
+  hud.setVisible(name !== 'menu');
+  menuEl.style.display = name === 'menu' ? 'flex' : 'none';
+  pauseEl.style.display = 'none';
+  const staged = stageShot(name, world, state, followCam);
+  const focus = staged.car ? staged.car.mesh.position : world.player.mesh.position;
+  const view = {
+    objective: name === 'chase'
+      ? 'Mission 3 — Lose the patrol and reach Rayo Garage'
+      : name === 'drive'
+        ? 'Mission 1 — Cruise to the Solmar Marina boardwalk'
+        : 'Free roam — explore Solmar Bay on foot or borrow a car (E)',
+    prompt: name === 'foot' ? 'E — Get in the Rayo Coupe' : '',
+    speedKmh: staged.car ? Math.abs(staged.car.speed) * 3.6 : 0,
+    missionTarget: { x: 22, z: 148 },
+    playerPos: focus,
+    playerHeading: staged.car ? staged.car.heading : world.player.heading,
+    cars: world.allCars,
+    police: [],
+    pedestrians: world.pedestrians,
+  };
+  // Let traffic and pedestrians settle into natural poses before the capture.
+  for (let i = 0; i < 90; i += 1) {
+    for (const car of world.traffic) car.updateTraffic(1 / 30, world.traffic);
+    for (const person of world.pedestrians) person.update(1 / 30, null);
   }
-  requestAnimationFrame(paint);
-}
-
-function runGame() {
-  const input = createInput(canvas);
-  let screen = SCREEN_TITLE;
-  let best = readBest();
-  let accumulator = 0;
-  let last = performance.now();
-
-  // Screen readers (and anyone watching the page's text) hear the screen changes and each hit.
-  function announce(message) {
-    status.textContent = message;
-  }
-
-  function startGame() {
-    world.reset();
-    accumulator = 0;
-    screen = SCREEN_PLAY;
-    announce(`Playing. ${LIVES} lives.`);
-  }
-
-  function endGame() {
-    screen = SCREEN_OVER;
-    if (world.state.score > best) {
-      best = world.state.score;
-      saveBest(best);
-    }
-    announce(`Game over. Score ${world.state.score}. Best ${best}.`);
-  }
-
-  function handleActions() {
-    const actions = input.takeActions();
-    if (actions & ACTION_CONFIRM && (screen === SCREEN_TITLE || screen === SCREEN_OVER)) startGame();
-    else if (actions & ACTION_PAUSE && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    } else if (actions & (ACTION_PAUSE | ACTION_CONFIRM) && screen === SCREEN_PAUSED) {
-      screen = SCREEN_PLAY;
-      announce('Playing.');
-    }
-  }
-
-  function step() {
-    if (screen === SCREEN_TITLE) {
-      world.step(STEP, 0, true);
-      return;
-    }
-    const events = world.step(STEP, input.direction(), false);
-    if (events & EVENT_OVER) endGame();
-    else if (events & EVENT_HIT) announce(world.state.lives === 1 ? 'Hit. 1 life left.' : `Hit. ${world.state.lives} lives left.`);
-  }
-
-  function frame(now) {
-    requestAnimationFrame(frame);
-    accumulator += Math.min((now - last) / 1000, MAX_FRAME);
-    last = now;
-    handleActions();
-    if (screen === SCREEN_TITLE || screen === SCREEN_PLAY) {
-      while (accumulator >= STEP && (screen === SCREEN_TITLE || screen === SCREEN_PLAY)) {
-        step();
-        accumulator -= STEP;
-      }
-    } else {
-      accumulator = 0;
-    }
-    renderer.draw(world.state, screen, best);
-  }
-
-  // Leaving the tab pauses a running game rather than letting blocks fall unseen.
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && screen === SCREEN_PLAY) {
-      screen = SCREEN_PAUSED;
-      announce('Paused.');
-    }
+  if (staged.car) staged.car.drive(0.016, 0.4, 0, false, world.city.colliders);
+  followCam.update(0.016, focus, Boolean(staged.car));
+  hud.update(state, view);
+  renderer.render(scene, camera3d);
+  requestAnimationFrame(() => {
+    hud.update(state, view);
+    renderer.render(scene, camera3d);
+    window.__shotReady = true;
   });
-
-  announce('Block Dodger. Press Space or click to start.');
-  requestAnimationFrame(frame);
 }
 
-if (shot) runShot(shot);
-else runGame();
+if (shotName) {
+  runShot(shotName);
+} else {
+  setMode(MODE_MENU);
+  requestAnimationFrame((t) => frame(t, t, null));
+}
