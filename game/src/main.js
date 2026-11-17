@@ -4,7 +4,7 @@
 // it stages a deterministic scene for screenshots instead of starting play.
 
 import * as THREE from 'three';
-import { createGameState, loadSave, applySave, writeSave, MODE_MENU, MODE_PAUSED, MODE_FOOT, MODE_DRIVE } from './state.js';
+import { createGameState, loadSave, applySave, writeSave, showMessage, MODE_MENU, MODE_PAUSED, MODE_FOOT, MODE_DRIVE } from './state.js';
 import { createInput, ACTION_INTERACT, ACTION_PAUSE, ACTION_CONFIRM } from './input.js';
 import { createWorld, createSunlight } from './world.js';
 import { FollowCamera } from './camera.js';
@@ -26,6 +26,8 @@ createSunlight(scene);
 const state = createGameState();
 applySave(state, loadSave());
 const world = createWorld(scene, seed);
+// A small handle for automated playtests and curious players in devtools.
+window.__solmarHeat = { state, world };
 const followCam = new FollowCamera(camera3d);
 const hud = createHud();
 const input = createInput(canvas);
@@ -60,6 +62,7 @@ function startPlay() {
   previousMode = MODE_FOOT;
   setMode(MODE_FOOT);
   followCam.snapBehind(world.player.heading);
+  showMessage(state, 'Click the game to look around with the mouse. WASD walks.', 5);
 }
 
 startButton.addEventListener('click', startPlay);
@@ -91,14 +94,26 @@ function handleActions() {
 }
 
 function frame(now, last, view) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const dt = Math.min((now - last) / 1000, 0.25);
   handleActions();
   if (state.mode === MODE_FOOT || state.mode === MODE_DRIVE) {
     state.playSeconds += dt;
     if (state.messageTimer > 0) state.messageTimer -= dt;
     const mouse = input.takeMouseDelta();
     followCam.orbit(mouse.x, mouse.y);
-    const nextView = world.update(dt, state, input, followCam.yaw);
+    if (state.mode === MODE_DRIVE && world.currentCar && Math.abs(world.currentCar.speed) > 3) {
+      followCam.alignBehind(world.currentCar.heading, dt);
+    }
+    // Simulate in fixed substeps of at most 1/30 s: on a slow machine the
+    // world still advances in real time instead of slipping into slow
+    // motion, and the arcade physics stays stable at any frame rate.
+    let nextView = view;
+    let remaining = dt;
+    while (remaining > 0) {
+      const step = Math.min(remaining, 1 / 30);
+      nextView = world.update(step, state, input, followCam.yaw);
+      remaining -= step;
+    }
     followCam.update(dt, world.focusPosition(state), state.mode === MODE_DRIVE);
     hud.update(state, nextView);
     renderer.render(scene, camera3d);

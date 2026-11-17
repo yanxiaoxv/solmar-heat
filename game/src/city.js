@@ -70,15 +70,40 @@ export function buildCity(scene, seed = 7) {
   ground.receiveShadow = true;
   group.add(ground);
 
-  const roadMaterial = new THREE.MeshLambertMaterial({ color: 0x3c4148 });
+  // Road markings are painted into the asphalt texture itself — one canvas
+  // per orientation — instead of hundreds of separate dash meshes. Draw
+  // calls stay low enough for modest GPUs to hold a steady frame rate.
+  function makeRoadMaterial(alongX) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#3c4148';
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillStyle = '#d8d2c0';
+    ctx.fillRect(4, 0, 3, 128);
+    ctx.fillRect(121, 0, 3, 128);
+    ctx.fillStyle = '#f7e08a';
+    ctx.fillRect(61, 8, 6, 52);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    if (alongX) texture.repeat.set(23, 1);
+    else texture.repeat.set(1, 23);
+    texture.anisotropy = 4;
+    return new THREE.MeshLambertMaterial({ map: texture });
+  }
+  const roadMaterialV = makeRoadMaterial(false);
+  const roadMaterialH = makeRoadMaterial(true);
   const walkMaterial = new THREE.MeshLambertMaterial({ color: 0xcfc4ae });
   for (const pos of ROAD_POSITIONS) {
-    const vertical = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, 300), roadMaterial);
+    const vertical = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, 300), roadMaterialV);
     vertical.rotation.x = -Math.PI / 2;
     vertical.position.set(pos, 0.01, 8);
     vertical.receiveShadow = true;
     group.add(vertical);
-    const horizontal = new THREE.Mesh(new THREE.PlaneGeometry(300, ROAD_WIDTH), roadMaterial);
+    const horizontal = new THREE.Mesh(new THREE.PlaneGeometry(300, ROAD_WIDTH), roadMaterialH);
     horizontal.rotation.x = -Math.PI / 2;
     horizontal.position.set(0, 0.01, pos);
     horizontal.receiveShadow = true;
@@ -95,25 +120,18 @@ export function buildCity(scene, seed = 7) {
     }
   }
 
-  // Dashed centre lines make speed readable from the chase camera.
-  const dashMaterial = new THREE.MeshBasicMaterial({ color: 0xf7e08a });
-  const dashGeo = new THREE.PlaneGeometry(0.35, 4);
-  for (const pos of ROAD_POSITIONS) {
-    for (let t = -140; t < 150; t += 9) {
-      const dashV = new THREE.Mesh(dashGeo, dashMaterial);
-      dashV.rotation.x = -Math.PI / 2;
-      dashV.position.set(pos, 0.03, t);
-      group.add(dashV);
-      const dashH = new THREE.Mesh(dashGeo, dashMaterial);
-      dashH.rotation.x = -Math.PI / 2;
-      dashH.rotation.z = Math.PI / 2;
-      dashH.position.set(t, 0.03, pos);
-      group.add(dashH);
-    }
-  }
-
   // Buildings fill each block: one or two towers per block with lit windows.
+  // Window materials are cached per palette colour so towers share textures.
   const roofMaterialCache = ROOF_PALETTE.map((color) => new THREE.MeshLambertMaterial({ color }));
+  const sideMaterialCache = new Map();
+  function sideMaterialFor(paletteIndex, variant) {
+    const key = `${paletteIndex}:${variant}`;
+    if (!sideMaterialCache.has(key)) {
+      const base = `#${BUILDING_PALETTE[paletteIndex].toString(16).padStart(6, '0')}`;
+      sideMaterialCache.set(key, new THREE.MeshLambertMaterial({ map: makeWindowTexture(base, 1000 + paletteIndex * 37 + variant * 101) }));
+    }
+    return sideMaterialCache.get(key);
+  }
   for (let bx = 0; bx < ROAD_POSITIONS.length - 1; bx += 1) {
     for (let bz = 0; bz < ROAD_POSITIONS.length - 1; bz += 1) {
       const cx = (ROAD_POSITIONS[bx] + ROAD_POSITIONS[bx + 1]) / 2;
@@ -126,8 +144,7 @@ export function buildCity(scene, seed = 7) {
         const ox = towers === 1 ? 0 : (t === 0 ? -8 : 8);
         const oz = towers === 1 ? 0 : (t === 0 ? 6 : -7);
         const paletteIndex = Math.floor(rand() * BUILDING_PALETTE.length);
-        const base = `#${BUILDING_PALETTE[paletteIndex].toString(16).padStart(6, '0')}`;
-        const sideMaterial = new THREE.MeshLambertMaterial({ map: makeWindowTexture(base, Math.floor(rand() * 1e9)) });
+        const sideMaterial = sideMaterialFor(paletteIndex, Math.floor(rand() * 3));
         const roofMaterial = roofMaterialCache[Math.floor(rand() * roofMaterialCache.length)];
         const tower = new THREE.Mesh(
           new THREE.BoxGeometry(w, h, d),
@@ -142,24 +159,12 @@ export function buildCity(scene, seed = 7) {
     }
   }
 
-  // Palms line the avenues and the beach promenade.
-  const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8a6844 });
-  const leafMaterial = new THREE.MeshLambertMaterial({ color: 0x2f9e5f, side: THREE.DoubleSide });
-  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 5.4, 6);
-  const leafGeo = new THREE.ConeGeometry(2.6, 1.1, 7);
+  // Palms line the avenues and the beach promenade. All trunks share one
+  // instanced mesh and all crowns another: two draw calls for the whole
+  // city's greenery instead of two per tree.
+  const palmSpots = [];
   function addPalm(x, z) {
-    const palm = new THREE.Group();
-    const trunk = new THREE.Mesh(trunkGeo, trunkMaterial);
-    trunk.position.y = 2.7;
-    trunk.rotation.z = (rand() - 0.5) * 0.14;
-    trunk.castShadow = true;
-    palm.add(trunk);
-    const crown = new THREE.Mesh(leafGeo, leafMaterial);
-    crown.position.y = 5.6;
-    crown.rotation.x = Math.PI;
-    palm.add(crown);
-    palm.position.set(x, 0, z);
-    group.add(palm);
+    palmSpots.push({ x, z, tilt: (rand() - 0.5) * 0.14, spin: rand() * Math.PI });
   }
   for (const pos of ROAD_POSITIONS) {
     for (let t = -128; t < 140; t += 22) {
@@ -168,6 +173,29 @@ export function buildCity(scene, seed = 7) {
     }
   }
   for (let x = -130; x < 140; x += 13) addPalm(x + rand() * 4, 141 + rand() * 3);
+  {
+    const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8a6844 });
+    const leafMaterial = new THREE.MeshLambertMaterial({ color: 0x2f9e5f, side: THREE.DoubleSide });
+    const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.34, 5.4, 6), trunkMaterial, palmSpots.length);
+    const crowns = new THREE.InstancedMesh(new THREE.ConeGeometry(2.6, 1.1, 7), leafMaterial, palmSpots.length);
+    const matrix = new THREE.Matrix4();
+    const quaternion = new THREE.Quaternion();
+    const euler = new THREE.Euler();
+    const scale = new THREE.Vector3(1, 1, 1);
+    palmSpots.forEach((spot, index) => {
+      euler.set(0, spot.spin, spot.tilt);
+      quaternion.setFromEuler(euler);
+      matrix.compose(new THREE.Vector3(spot.x, 2.7, spot.z), quaternion, scale);
+      trunks.setMatrixAt(index, matrix);
+      euler.set(Math.PI, spot.spin, 0);
+      quaternion.setFromEuler(euler);
+      matrix.compose(new THREE.Vector3(spot.x, 5.6, spot.z), quaternion, scale);
+      crowns.setMatrixAt(index, matrix);
+    });
+    trunks.castShadow = true;
+    group.add(trunks);
+    group.add(crowns);
+  }
 
   // Beach and bay water to the south.
   const sand = new THREE.Mesh(new THREE.PlaneGeometry(420, 42), new THREE.MeshLambertMaterial({ color: 0xf0d9a0 }));
@@ -193,23 +221,34 @@ export function buildCity(scene, seed = 7) {
     group.add(hull);
   }
 
-  // Street lamps: small emissive heads that read at dusk.
-  const lampPostGeo = new THREE.CylinderGeometry(0.09, 0.09, 5, 5);
-  const lampPostMaterial = new THREE.MeshLambertMaterial({ color: 0x444a52 });
-  const lampHeadMaterial = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
-  const lampHeadGeo = new THREE.SphereGeometry(0.32, 8, 6);
-  for (const x of ROAD_POSITIONS) {
-    for (const z of ROAD_POSITIONS) {
-      const lamp = new THREE.Group();
-      const post = new THREE.Mesh(lampPostGeo, lampPostMaterial);
-      post.position.y = 2.5;
-      lamp.add(post);
-      const head = new THREE.Mesh(lampHeadGeo, lampHeadMaterial);
-      head.position.y = 5.05;
-      lamp.add(head);
-      lamp.position.set(x + ROAD_WIDTH / 2 + 1, 0, z + ROAD_WIDTH / 2 + 1);
-      group.add(lamp);
+  // Street lamps at every intersection corner, again instanced: posts in
+  // one mesh, glowing heads in another.
+  {
+    const lampSpots = [];
+    for (const x of ROAD_POSITIONS) {
+      for (const z of ROAD_POSITIONS) {
+        lampSpots.push({ x: x + ROAD_WIDTH / 2 + 1, z: z + ROAD_WIDTH / 2 + 1 });
+      }
     }
+    const posts = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.09, 0.09, 5, 5),
+      new THREE.MeshLambertMaterial({ color: 0x444a52 }),
+      lampSpots.length,
+    );
+    const heads = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.32, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffe9a8 }),
+      lampSpots.length,
+    );
+    const matrix = new THREE.Matrix4();
+    lampSpots.forEach((spot, index) => {
+      matrix.makeTranslation(spot.x, 2.5, spot.z);
+      posts.setMatrixAt(index, matrix);
+      matrix.makeTranslation(spot.x, 5.05, spot.z);
+      heads.setMatrixAt(index, matrix);
+    });
+    group.add(posts);
+    group.add(heads);
   }
 
   let elapsed = 0;

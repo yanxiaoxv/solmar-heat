@@ -20,6 +20,7 @@ export function createWorld(scene, seed = 7) {
 
   let currentCar = null;
   let visitedMarina = false;
+  let driveHintShown = false;
 
   function focusPosition(state) {
     if (state.mode === MODE_DRIVE && currentCar) return currentCar.mesh.position;
@@ -52,6 +53,10 @@ export function createWorld(scene, seed = 7) {
       car.everDriven = true;
       player.setVisible(false);
       state.mode = MODE_DRIVE;
+      if (!driveHintShown) {
+        driveHintShown = true;
+        showMessage(state, 'WASD drives, Space is the handbrake, E steps out.', 5);
+      }
       return true;
     }
     if (state.mode === MODE_DRIVE && currentCar) {
@@ -66,6 +71,41 @@ export function createWorld(scene, seed = 7) {
       return true;
     }
     return false;
+  }
+
+  function resolveCarBumps(state) {
+    // Circle-versus-circle bumps: the driven car shoves parked and traffic
+    // cars and loses speed; traffic gives a walking player a rude push
+    // instead of passing through him.
+    if (state.mode === MODE_DRIVE && currentCar) {
+      for (const other of allCars) {
+        if (other === currentCar) continue;
+        const dx = currentCar.mesh.position.x - other.mesh.position.x;
+        const dz = currentCar.mesh.position.z - other.mesh.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 0.01 && dist < 3.3) {
+          const push = (3.3 - dist) / dist;
+          currentCar.mesh.position.x += dx * push * 0.7;
+          currentCar.mesh.position.z += dz * push * 0.7;
+          if (Math.abs(currentCar.speed) > 8) {
+            currentCar.health = Math.max(5, currentCar.health - 4);
+            showMessage(state, 'Careful! The car is taking damage.');
+          }
+          currentCar.speed *= 0.45;
+        }
+      }
+    }
+    if (state.mode === MODE_FOOT) {
+      for (const car of traffic) {
+        const dx = player.mesh.position.x - car.mesh.position.x;
+        const dz = player.mesh.position.z - car.mesh.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 0.01 && dist < 1.9) {
+          player.mesh.position.x += (dx / dist) * (1.9 - dist);
+          player.mesh.position.z += (dz / dist) * (1.9 - dist);
+        }
+      }
+    }
   }
 
   function update(dt, state, input, cameraYaw) {
@@ -90,6 +130,7 @@ export function createWorld(scene, seed = 7) {
     }
 
     for (const car of traffic) car.updateTraffic(dt, traffic);
+    resolveCarBumps(state);
     for (const person of pedestrians) person.update(dt, danger);
 
     // Free-roam objective for the skeleton build: reach the marina boardwalk.
@@ -144,7 +185,7 @@ export function createSunlight(scene) {
   const sun = new THREE.DirectionalLight(0xffdfb0, 2.6);
   sun.position.set(-70, 95, -45);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.left = -160;
   sun.shadow.camera.right = 160;
   sun.shadow.camera.top = 160;

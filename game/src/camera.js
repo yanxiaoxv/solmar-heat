@@ -54,4 +54,15 @@ export class FollowCamera {
     // When entering a car or starting a scene, start the orbit behind the actor.
     this.yaw = heading + Math.PI;
   }
+
+  alignBehind(heading, dt, strength = 1.6) {
+    // While driving, ease the orbit toward the car's tail so steering never
+    // leaves the player looking sideways; mouse input can still fight it,
+    // and the stronger the turn the gentler the pull.
+    const target = heading + Math.PI;
+    let diff = target - this.yaw;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.yaw += diff * Math.min(1, dt * strength);
+  }
 }

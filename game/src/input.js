@@ -83,7 +83,16 @@ export function createInput(canvas) {
       return delta;
     },
     requestPointerLock() {
-      if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
+      if (document.pointerLockElement !== canvas) {
+        try {
+          // Chrome returns a promise here; a call without a fresh user
+          // gesture rejects, and that rejection must never reach the console.
+          const attempt = canvas.requestPointerLock?.();
+          if (attempt && typeof attempt.catch === 'function') attempt.catch(() => {});
+        } catch {
+          // Pointer lock is a nicety, never a blocker for play.
+        }
+      }
     },
     releasePointerLock() {
       if (document.pointerLockElement === canvas) document.exitPointerLock?.();
