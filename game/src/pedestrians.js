@@ -48,6 +48,7 @@ export class Pedestrian {
     this.fleeTimer = 0;
     this.fleeX = 0;
     this.fleeZ = 0;
+    this.fallTimer = 0;
     this.bobPhase = index * 1.7;
     this.syncPosition();
   }
@@ -71,7 +72,26 @@ export class Pedestrian {
     }
   }
 
+  knockDown() {
+    // Flat on the pavement for a beat, then up and running scared.
+    this.fallTimer = 1.5;
+    this.fleeTimer = 2.2;
+    const angle = Math.random() * Math.PI * 2;
+    this.fleeX = Math.sin(angle);
+    this.fleeZ = Math.cos(angle);
+  }
+
   update(dt, danger) {
+    if (this.fallTimer > 0) {
+      this.fallTimer -= dt;
+      this.mesh.rotation.x = -Math.PI / 2 * Math.min(1, (1.5 - this.fallTimer) * 5);
+      this.mesh.position.y = 0.12;
+      if (this.fallTimer <= 0) {
+        this.mesh.rotation.x = 0;
+        this.mesh.position.y = 0;
+      }
+      return;
+    }
     if (danger) this.scare(danger.x, danger.z, danger.radius ?? 9);
     if (this.fleeTimer > 0) {
       this.fleeTimer -= dt;

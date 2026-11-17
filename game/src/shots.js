@@ -30,14 +30,17 @@ export function stageShot(name, world, state, camera) {
     state.mode = MODE_DRIVE;
     state.wanted = 3;
     state.cash = 890;
-    const car = world.parkedCars[4];
+    const car = world.parkedCars[0];
     car.placeAt(-22, 18, Math.PI);
     car.speed = 21;
     player.setVisible(false);
     player.mesh.position.copy(car.mesh.position);
+    // A real patrol unit on the tail, light bar flashing — the cover sells
+    // the wanted system only if the police are actually in the frame.
+    world.stagePolice(3, { x: car.mesh.position.x, z: car.mesh.position.z, heading: car.heading });
     camera.pin(
-      new THREE.Vector3(car.mesh.position.x + 9, 4.2, car.mesh.position.z + 12),
-      new THREE.Vector3(car.mesh.position.x - 1, 1.1, car.mesh.position.z - 10),
+      new THREE.Vector3(car.mesh.position.x + 6.5, 3.4, car.mesh.position.z + 13.5),
+      new THREE.Vector3(car.mesh.position.x, 1.2, car.mesh.position.z - 6),
     );
     return { mode: MODE_DRIVE, car };
   }

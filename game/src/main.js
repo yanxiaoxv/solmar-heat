@@ -4,7 +4,7 @@
 // it stages a deterministic scene for screenshots instead of starting play.
 
 import * as THREE from 'three';
-import { createGameState, loadSave, applySave, writeSave, showMessage, MODE_MENU, MODE_PAUSED, MODE_FOOT, MODE_DRIVE } from './state.js';
+import { createGameState, loadSave, applySave, writeSave, showMessage, MODE_MENU, MODE_PAUSED, MODE_FOOT, MODE_DRIVE, MODE_BUSTED, MODE_WASTED } from './state.js';
 import { createInput, ACTION_INTERACT, ACTION_PAUSE, ACTION_CONFIRM } from './input.js';
 import { createWorld, createSunlight } from './world.js';
 import { FollowCamera } from './camera.js';
@@ -34,8 +34,14 @@ const input = createInput(canvas);
 
 const menuEl = document.getElementById('menu');
 const pauseEl = document.getElementById('pause');
+const bustedEl = document.getElementById('busted');
+const bustedTitle = document.getElementById('busted-title');
+const bustedText = document.getElementById('busted-text');
 const startButton = document.getElementById('menu-start');
 const resumeButton = document.getElementById('pause-resume');
+const respawnButton = document.getElementById('busted-respawn');
+let pendingFine = 0;
+let uiMode = null;
 
 function resize() {
   const w = window.innerWidth;
@@ -51,12 +57,43 @@ let previousMode = MODE_FOOT;
 
 function setMode(mode) {
   state.mode = mode;
+  syncModeUi();
+}
+
+function syncModeUi() {
+  // Panels follow the state wherever the change came from — a button, the
+  // pause key, or the patrol ending a chase in the world simulation.
+  const mode = state.mode;
+  if (mode === uiMode) return;
+  uiMode = mode;
   menuEl.style.display = mode === MODE_MENU ? 'flex' : 'none';
   pauseEl.style.display = mode === MODE_PAUSED ? 'flex' : 'none';
+  bustedEl.style.display = mode === MODE_BUSTED || mode === MODE_WASTED ? 'flex' : 'none';
   hud.setVisible(mode === MODE_FOOT || mode === MODE_DRIVE);
+  if (mode === MODE_BUSTED) {
+    pendingFine = 80 + state.wanted * 70;
+    bustedTitle.textContent = 'BUSTED';
+    bustedText.textContent = `The Solmar Patrol boxed you in. The fine is $${pendingFine}, and your name goes in their little book.`;
+    respawnButton.textContent = `Pay $${pendingFine} and walk`;
+  } else if (mode === MODE_WASTED) {
+    pendingFine = 150;
+    bustedTitle.textContent = 'WASTED';
+    bustedText.textContent = 'You wake up at the Solmar Clinic with a $150 bill and a spectacular headache.';
+    respawnButton.textContent = 'Pay $150 and walk';
+  }
   if (mode === MODE_FOOT || mode === MODE_DRIVE) input.requestPointerLock();
   else input.releasePointerLock();
 }
+
+respawnButton.addEventListener('click', () => {
+  state.cash = Math.max(0, state.cash - pendingFine);
+  pendingFine = 0;
+  world.respawnPlayer(state);
+  writeSave(state);
+  uiMode = null;
+  setMode(MODE_FOOT);
+  followCam.snapBehind(world.player.heading);
+});
 
 function startPlay() {
   previousMode = MODE_FOOT;
@@ -95,6 +132,7 @@ function handleActions() {
 
 function frame(now, last, view) {
   const dt = Math.min((now - last) / 1000, 0.25);
+  syncModeUi();
   handleActions();
   if (state.mode === MODE_FOOT || state.mode === MODE_DRIVE) {
     state.playSeconds += dt;
@@ -109,7 +147,7 @@ function frame(now, last, view) {
     // motion, and the arcade physics stays stable at any frame rate.
     let nextView = view;
     let remaining = dt;
-    while (remaining > 0) {
+    while (remaining > 0 && (state.mode === MODE_FOOT || state.mode === MODE_DRIVE)) {
       const step = Math.min(remaining, 1 / 30);
       nextView = world.update(step, state, input, followCam.yaw);
       remaining -= step;
@@ -146,7 +184,7 @@ function runShot(name) {
     playerPos: focus,
     playerHeading: staged.car ? staged.car.heading : world.player.heading,
     cars: world.allCars,
-    police: [],
+    police: world.policeUnits.map((unit) => unit.car),
     pedestrians: world.pedestrians,
   };
   // Let traffic and pedestrians settle into natural poses before the capture.

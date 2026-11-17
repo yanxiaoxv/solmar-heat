@@ -10,6 +10,7 @@ export const MODE_DRIVE = 'drive';
 export const MODE_MENU = 'menu';
 export const MODE_PAUSED = 'paused';
 export const MODE_BUSTED = 'busted';
+export const MODE_WASTED = 'wasted';
 
 export function createGameState() {
   return {
@@ -20,6 +21,8 @@ export function createGameState() {
     armour: 0,
     wanted: 0,
     wantedTimer: 0,
+    bustedTimer: 0,
+    hideTimer: 0,
     missionIndex: 0,
     missionStage: 'idle',
     playSeconds: 0,
