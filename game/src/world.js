@@ -4,12 +4,13 @@
 // driving it, and climbing back out onto the sidewalk.
 
 import * as THREE from 'three';
-import { buildCity, LANDMARKS, ROAD_POSITIONS } from './city.js';
+import { buildCity, ROAD_POSITIONS } from './city.js';
 import { Player } from './player.js';
-import { createParkedCars, createTraffic, nearestCar } from './vehicles.js';
+import { DriveCar, createParkedCars, createTraffic, nearestCar } from './vehicles.js';
 import { createPedestrians, scareCrowd } from './pedestrians.js';
 import { PoliceUnit, spawnPointNear } from './police.js';
 import { createCombat } from './combat.js';
+import { createMissions } from './missions.js';
 import { MODE_DRIVE, MODE_FOOT, MODE_BUSTED, MODE_WASTED, addWanted, showMessage } from './state.js';
 
 export function createWorld(scene, seed = 7) {
@@ -20,15 +21,34 @@ export function createWorld(scene, seed = 7) {
   const pedestrians = createPedestrians(scene, 16);
   const policeUnits = [];
   const combat = createCombat();
+  const pendingEvents = [];
   let crimeCooldown = 0;
+  let runoverCooldown = 0;
   let ramCooldown = 0;
+  let spawnClock = 0;
+  let hideNoticeShown = false;
+  let calmSeconds = 0;
+  let lastHealth = 100;
+  let crimePrompt = '';
+  let goldCarSpawned = false;
+
+  function spawnGoldCar() {
+    // The finale's prize, parked outside the Rayo Garage for good: a gold
+    // Rayo Coupe that only exists once Nico owns the place.
+    if (goldCarSpawned) return;
+    goldCarSpawned = true;
+    const gold = new DriveCar('sport', 0xf7c873, 66 + 3.1, -52, 0);
+    scene.add(gold.mesh);
+    parkedCars.push(gold);
+  }
+
+  const missions = createMissions(scene, { onGarageOwned: spawnGoldCar });
 
   function getAllCars() {
     return [...parkedCars, ...traffic, ...policeUnits.map((unit) => unit.car)];
   }
 
   let currentCar = null;
-  let visitedMarina = false;
   let driveHintShown = false;
 
   function focusPosition(state) {
@@ -98,6 +118,7 @@ export function createWorld(scene, seed = 7) {
           currentCar.mesh.position.z += dz * push * 0.7;
           if (Math.abs(currentCar.speed) > 8) {
             currentCar.health = Math.max(5, currentCar.health - 4);
+            pendingEvents.push('bump');
             showMessage(state, 'Careful! The car is taking damage.');
           }
           currentCar.speed *= 0.45;
@@ -141,37 +162,30 @@ export function createWorld(scene, seed = 7) {
     for (const car of traffic) car.updateTraffic(dt, traffic);
     resolveCarBumps(state);
     for (const person of pedestrians) person.update(dt, danger);
+
+    // The story layer runs before the patrol so a job that raises the
+    // wanted level (a package pickup, Mara climbing in) gets its sirens
+    // in the same step, not a frame later.
+    const focus = focusPosition(state);
+    const missionView = missions.update(dt, state, {
+      focus,
+      player,
+      attacking: input.isAttacking(),
+    });
+    for (const eventName of missionView.events) pendingEvents.push(eventName);
     updateCrimeAndPolice(dt, state, input);
 
-    // Free-roam objective for the skeleton build: reach the marina boardwalk.
-    let objective = 'Free roam — reach the Solmar Marina boardwalk';
-    let missionTarget = LANDMARKS[0];
-    const focus = focusPosition(state);
-    if (!visitedMarina) {
-      const dist = Math.hypot(focus.x - missionTarget.x, focus.z - missionTarget.z);
-      if (dist < 7) {
-        visitedMarina = true;
-        state.cash += 100;
-        state.reputation += 1;
-        showMessage(state, 'Marina reached! +$100 — the city is yours to explore.');
-      } else {
-        objective = `Free roam — reach the Solmar Marina (${Math.round(dist)} m)`;
-      }
-    } else {
-      objective = 'Free roam — steal a ride, outrun your curiosity, enjoy Solmar Bay';
-      missionTarget = null;
-    }
-
     return {
-      objective,
-      prompt,
+      objective: missionView.objective,
+      prompt: crimePrompt || prompt || missionView.prompt,
       speedKmh,
-      missionTarget,
+      missionTarget: missionView.missionTarget,
       playerPos: focus,
       playerHeading: focusHeading(state),
       cars: getAllCars(),
       police: policeUnits.map((unit) => unit.car),
       pedestrians,
+      rivals: missionView.rivals,
     };
   }
 
@@ -184,19 +198,64 @@ export function createWorld(scene, seed = 7) {
     return nearest;
   }
 
+  function patrolCanSee(focus) {
+    // A unit sees the player inside 46 m with no tower in between. The
+    // segment is sampled against the building colliders — crude, but in
+    // a grid city it draws exactly the line players expect: duck around
+    // a corner and you are genuinely gone, not just far away.
+    for (const unit of policeUnits) {
+      const dx = focus.x - unit.position.x;
+      const dz = focus.z - unit.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 46) continue;
+      let blocked = false;
+      for (let step = 1; step <= 5 && !blocked; step += 1) {
+        const px = unit.position.x + (dx * step) / 6;
+        const pz = unit.position.z + (dz * step) / 6;
+        for (const box of city.colliders) {
+          if (px > box.minX - 0.4 && px < box.maxX + 0.4 && pz > box.minZ - 0.4 && pz < box.maxZ + 0.4) {
+            blocked = true;
+            break;
+          }
+        }
+      }
+      if (!blocked) return true;
+    }
+    return false;
+  }
+
   function updateCrimeAndPolice(dt, state, input) {
+    // Crime, response and consequences, second build. The changes from
+    // the first version are about fairness a player can feel: the patrol
+    // now has eyes (line of sight, not a radius), reinforcements roll in
+    // over a few seconds instead of materialising all at once, a unit
+    // that gives up its chase is replaced through the same spawn flow,
+    // the bust builds as a visible meter with a warning before it lands,
+    // and a player who stays out of trouble slowly gets their health
+    // back instead of limping at 12 HP for the rest of the day.
     if (crimeCooldown > 0) crimeCooldown -= dt;
+    if (runoverCooldown > 0) runoverCooldown -= dt;
     if (ramCooldown > 0) ramCooldown -= dt;
+    if (spawnClock > 0) spawnClock -= dt;
     combat.update(dt);
     const focus = focusPosition(state);
+    crimePrompt = '';
 
-    // Melee on foot, with the patrol as witness.
+    // Melee on foot. A landed shove physically pushes its target, and it
+    // is only a witnessed crime if a patrol unit can actually see it.
     if (state.mode === MODE_FOOT && input.isAttacking()) {
       const hit = combat.tryAttack(player, pedestrians, getAllCars());
-      if (hit && hit.kind === 'pedestrian' && policeDistanceTo(focus) < 30 && crimeCooldown <= 0) {
-        crimeCooldown = 2.5;
-        addWanted(state, 1);
-        showMessage(state, 'The patrol saw that shove! Wanted level up.');
+      if (hit) {
+        pendingEvents.push(hit.kind === 'car' ? 'bump' : 'thud');
+        if (hit.kind === 'pedestrian') {
+          hit.target.mesh.position.x += hit.dirX * 0.7 * hit.power;
+          hit.target.mesh.position.z += hit.dirZ * 0.7 * hit.power;
+          if (crimeCooldown <= 0 && patrolCanSee(focus)) {
+            crimeCooldown = 2.5;
+            addWanted(state, 1);
+            showMessage(state, 'The patrol saw that shove! Wanted level up.');
+          }
+        }
       }
     }
 
@@ -206,8 +265,8 @@ export function createWorld(scene, seed = 7) {
         const dist = Math.hypot(person.mesh.position.x - focus.x, person.mesh.position.z - focus.z);
         if (dist < 1.6 && person.fallTimer <= 0) {
           person.knockDown();
-          if (crimeCooldown <= 0) {
-            crimeCooldown = 3;
+          if (runoverCooldown <= 0) {
+            runoverCooldown = 3;
             addWanted(state, 1);
             showMessage(state, 'You hit a pedestrian! The patrol is coming.');
           }
@@ -215,12 +274,16 @@ export function createWorld(scene, seed = 7) {
       }
     }
 
-    // The patrol answers the stars: one unit per star, at most four.
+    // The patrol answers the stars: one unit per star, at most four —
+    // but they arrive like traffic, not like a conjuring trick. The
+    // first unit responds at once; each further unit needs most of a
+    // second to reach the scene. When stars fall, units peel off.
     const desired = Math.min(state.wanted, 4);
-    while (policeUnits.length < desired) {
+    if (policeUnits.length < desired && spawnClock <= 0) {
       const spot = spawnPointNear(focus, policeUnits.length);
       policeUnits.push(new PoliceUnit(scene, spot.x, spot.z, spot.heading));
-      if (policeUnits.length === desired) showMessage(state, 'Sirens — the Solmar Patrol is rolling!');
+      spawnClock = 0.9;
+      if (policeUnits.length === 1) showMessage(state, 'Sirens — the Solmar Patrol is rolling!');
     }
     while (policeUnits.length > desired) {
       const unit = policeUnits.pop();
@@ -232,7 +295,16 @@ export function createWorld(scene, seed = 7) {
       speed: state.mode === MODE_DRIVE && currentCar ? Math.abs(currentCar.speed) : 0,
       heading: focusHeading(state),
     };
-    for (const unit of policeUnits) unit.update(dt, target, city.colliders, state.wanted, ROAD_POSITIONS);
+    for (let i = policeUnits.length - 1; i >= 0; i -= 1) {
+      const unit = policeUnits[i];
+      unit.update(dt, target, city.colliders, state.wanted, ROAD_POSITIONS);
+      if (unit.gaveUp) {
+        // This driver lost the chase for good; the spawn logic above
+        // will roll a replacement in from blocks away next beat.
+        unit.dispose(scene);
+        policeUnits.splice(i, 1);
+      }
+    }
 
     // A patrol car that catches a walking player at speed hurts.
     if (state.mode === MODE_FOOT && ramCooldown <= 0) {
@@ -240,7 +312,7 @@ export function createWorld(scene, seed = 7) {
         const dist = Math.hypot(unit.position.x - focus.x, unit.position.z - focus.z);
         if (dist < 2.2 && Math.abs(unit.car.speed) > 6) {
           ramCooldown = 1.4;
-          state.health = Math.max(0, state.health - 22);
+          state.health = Math.max(0, state.health - 20);
           player.mesh.position.x += (focus.x - unit.position.x) * 0.9;
           player.mesh.position.z += (focus.z - unit.position.z) * 0.9;
           showMessage(state, 'The patrol clipped you! Keep moving or give up distance.');
@@ -249,20 +321,33 @@ export function createWorld(scene, seed = 7) {
       }
     }
 
-    // Hiding: break line of pursuit for a while and the stars bleed off.
-    const nearestPolice = policeDistanceTo(focus);
-    if (state.wanted > 0 && nearestPolice > 58) {
+    // Hiding is about eyes, not distance: stay unseen — around a corner,
+    // down an alley, anywhere the sampled sight line breaks — and the
+    // stars bleed off one at a time. The player gets told once that it
+    // is working, so breaking line of sight becomes a skill they learn.
+    const seen = state.wanted > 0 && patrolCanSee(focus);
+    if (state.wanted > 0 && !seen) {
       state.hideTimer += dt;
-      if (state.hideTimer > 10) {
+      if (state.hideTimer > 3 && !hideNoticeShown) {
+        hideNoticeShown = true;
+        showMessage(state, "They've lost sight of you — stay hidden and the heat fades.");
+      }
+      if (state.hideTimer > 8) {
         state.hideTimer = 0;
+        hideNoticeShown = false;
         addWanted(state, -1);
-        showMessage(state, state.wanted === 0 ? 'You lost them. Wanted level cleared.' : 'You are losing them — stay out of sight.');
+        showMessage(state, state.wanted === 0 ? 'You lost them. Wanted level cleared.' : 'One star gone — keep out of sight.');
       }
     } else {
       state.hideTimer = 0;
+      hideNoticeShown = false;
     }
 
-    // Busted: cornered on foot, or boxed in while crawling in a car.
+    // Busted is a meter, not a tripwire: it fills while a unit has the
+    // player cornered, drains twice as fast once they break away, and
+    // past halfway the prompt slot turns into the warning — no message
+    // spam, and a fair chance to escape a bust that has not landed yet.
+    const nearestPolice = policeDistanceTo(focus);
     const playerSpeed = state.mode === MODE_DRIVE && currentCar ? Math.abs(currentCar.speed) : 0;
     const cornered = state.wanted > 0 && (
       (state.mode === MODE_FOOT && nearestPolice < 3.6) ||
@@ -270,15 +355,24 @@ export function createWorld(scene, seed = 7) {
     );
     if (cornered) {
       state.bustedTimer += dt;
-      if (state.bustedTimer > 0.4 && state.bustedTimer < 1.9) {
-        showMessage(state, 'The patrol has you cornered — move!', 0.4);
-      }
+      if (state.bustedTimer > 0.85) crimePrompt = 'The patrol has you cornered — MOVE!';
       if (state.bustedTimer >= 1.9) {
         state.bustedTimer = 0;
         state.mode = MODE_BUSTED;
       }
     } else {
       state.bustedTimer = Math.max(0, state.bustedTimer - dt * 2);
+    }
+
+    // Recovery: five calm seconds — no damage from any source, tracked
+    // by watching the health value itself — and Nico starts patching
+    // himself up. Getting shot at by life resets the clock.
+    if (state.health < lastHealth) calmSeconds = 0;
+    else calmSeconds += dt;
+    lastHealth = state.health;
+    if (calmSeconds > 5 && state.health > 0 && state.health < 100) {
+      state.health = Math.min(100, state.health + 1.6 * dt);
+      lastHealth = state.health;
     }
 
     if (state.health <= 0 && state.mode !== MODE_WASTED) {
@@ -296,6 +390,11 @@ export function createWorld(scene, seed = 7) {
     state.hideTimer = 0;
     state.bustedTimer = 0;
     state.health = 100;
+    spawnClock = 0;
+    calmSeconds = 0;
+    lastHealth = 100;
+    crimePrompt = '';
+    missions.onRespawn();
     player.placeAt(-22 + 6, -16, Math.PI);
     player.setVisible(true);
     state.mode = MODE_FOOT;
@@ -329,6 +428,7 @@ export function createWorld(scene, seed = 7) {
     pedestrians,
     policeUnits,
     combat,
+    missions,
     get allCars() { return getAllCars(); },
     handleInteract,
     focusPosition,
@@ -336,6 +436,12 @@ export function createWorld(scene, seed = 7) {
     update,
     respawnPlayer,
     stagePolice,
+    unlockGarageCar: spawnGoldCar,
+    drainEvents() {
+      const drained = pendingEvents.slice();
+      pendingEvents.length = 0;
+      return drained;
+    },
     get currentCar() { return currentCar; },
   };
 }

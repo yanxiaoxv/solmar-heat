@@ -22,6 +22,10 @@ export function createInput(canvas) {
   let mouseDX = 0;
   let mouseDY = 0;
   let attacking = false;
+  let lastAttackAt = -Infinity;
+  let pressPending = false;
+  let pressFrames = 0;
+  let attackFrameFlag = false;
 
   window.addEventListener('keydown', (event) => {
     if (event.repeat) return;
@@ -35,9 +39,15 @@ export function createInput(canvas) {
   window.addEventListener('blur', () => {
     held.clear();
     attacking = false;
+    pressPending = false;
   });
   canvas.addEventListener('mousedown', (event) => {
-    if (event.button === 0) attacking = true;
+    if (event.button === 0) {
+      attacking = true;
+      lastAttackAt = performance.now();
+      pressPending = true;
+      pressFrames = 0;
+    }
   });
   window.addEventListener('mouseup', (event) => {
     if (event.button === 0) attacking = false;
@@ -68,8 +78,31 @@ export function createInput(canvas) {
     handbrake() {
       return held.has('Space');
     },
+    beginFrame() {
+      // Fold raw mouse state into the flag the simulation reads. The
+      // first version of this used a 300 ms wall-clock pulse, and play
+      // testing on a slow renderer (frames a second or more apart in
+      // software rendering) proved it loses most quick clicks: the
+      // pulse expires before any frame exists to see it. Now a press
+      // latches until frames have actually delivered it — it stays
+      // visible for two consecutive frames, so a press that arrives
+      // while a swing cooldown is still closing is not thrown away
+      // either; the cooldowns (0.45 s) still stop one press from ever
+      // swinging twice. A press older than 3 s is stale and dropped:
+      // the cap used to be 1.2 s, but this renderer's frame gaps can
+      // run past that with no frame at all to deliver the press, and
+      // on a healthy machine the two-frame expiry still clears it in
+      // ~33 ms, so the longer cap costs no input lag where it matters.
+      // Holding the button reads as attacking on every frame.
+      if (pressPending && performance.now() - lastAttackAt > 3000) pressPending = false;
+      attackFrameFlag = attacking || pressPending;
+      if (pressPending && !attacking) {
+        pressFrames += 1;
+        if (pressFrames >= 2) pressPending = false;
+      }
+    },
     isAttacking() {
-      return attacking;
+      return attackFrameFlag;
     },
     takeActions() {
       const actions = queuedActions;

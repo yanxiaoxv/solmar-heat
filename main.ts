@@ -1,8 +1,14 @@
 // Solmar Heat — a gta6-01 entry (Node 22, standard library only): the game is this
 // directory's game/ folder, a three.js open-world crime game set in the original bay
 // city of Solmar (game/index.html and its ES modules, three.js vendored minified under
-// game/vendor/, no network request), and this program hands it in. It copies game/ and
-// screenshots/ from beside this file to /output and writes /output/dossier.json, the
+// game/vendor/, no network request), and this program hands it in. The M3 build adds
+// the five-job story chain in game/src/missions.js, the localStorage save in
+// game/src/save.js and the fully synthesised WebAudio soundscape in
+// game/src/audio.js — still zero assets and zero network. The pursuit AI
+// was rewritten in the recorded build session (avenue routing, line-of-sight
+// wanted decay, busted/wasted settlement), and the showdown queues a swing
+// pressed inside its recovery so a slow renderer never eats a click.
+// It copies game/ and screenshots/ from beside this file to /output and writes /output/dossier.json, the
 // summary the judge reads, with the vendored make.fun library.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.

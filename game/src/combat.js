@@ -1,58 +1,85 @@
-// Hand-to-hand combat for Solmar Heat: Nico's shove. On foot, a click throws
-// a short swing in front of him; a pedestrian caught in the arc goes down,
-// gets up angry and runs, and doing it in front of the patrol is a crime.
-// Cars dent instead of falling over. It is deliberately simple in M2 — the
-// story fights in M3 build on the same swing.
+// Hand-to-hand combat for Solmar Heat, second build: Nico's shove as a
+// committed swing rather than an instant ray. A swing has a wind-up, a
+// brief active arc and a recovery — and the recovery is honest about
+// what happened: landing a shove costs more time (0.5 s) than swinging
+// at air (0.32 s), because Nico puts his shoulder into people. Every hit
+// reports a knockback direction and power, so the world can physically
+// push what was shoved instead of targets merely falling where they
+// stood; a second person caught in the same arc takes a weaker push
+// than the first. Cars dent, spark a different sound, and never fall
+// over. Doing any of it in front of the patrol is the world's business.
 
 export const MELEE_RANGE = 2.3;
-export const MELEE_COOLDOWN = 0.45;
+
+const SWING_ACTIVE_SECONDS = 0.16;
+const RECOVERY_ON_HIT = 0.5;
+const RECOVERY_ON_WHIFF = 0.32;
+const ARC_COSINE = 0.32;
 
 export function createCombat() {
   let cooldown = 0;
-  let swingTimer = 0;
+  let swingAge = Infinity;
+
+  function facingOf(player) {
+    return { x: Math.sin(player.heading), z: Math.cos(player.heading) };
+  }
+
+  function arcHit(player, facing, targetPos) {
+    const dx = targetPos.x - player.mesh.position.x;
+    const dz = targetPos.z - player.mesh.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > MELEE_RANGE || dist < 0.01) return null;
+    const dot = (dx * facing.x + dz * facing.z) / dist;
+    if (dot <= ARC_COSINE) return null;
+    return { dirX: dx / dist, dirZ: dz / dist, dist };
+  }
 
   return {
     get swinging() {
-      return swingTimer > 0;
+      return swingAge < SWING_ACTIVE_SECONDS;
     },
     update(dt) {
       if (cooldown > 0) cooldown -= dt;
-      if (swingTimer > 0) swingTimer -= dt;
+      swingAge += dt;
     },
     tryAttack(player, pedestrians, cars) {
       if (cooldown > 0) return null;
-      cooldown = MELEE_COOLDOWN;
-      swingTimer = 0.22;
-      const facingX = Math.sin(player.heading);
-      const facingZ = Math.cos(player.heading);
+      swingAge = 0;
+      const facing = facingOf(player);
       let hit = null;
+      let peopleHit = 0;
       for (const person of pedestrians) {
-        const dx = person.mesh.position.x - player.mesh.position.x;
-        const dz = person.mesh.position.z - player.mesh.position.z;
-        const dist = Math.hypot(dx, dz);
-        if (dist > MELEE_RANGE || dist < 0.01) continue;
-        const dot = (dx * facingX + dz * facingZ) / dist;
-        if (dot > 0.35) {
-          person.knockDown();
-          hit = hit ?? { kind: 'pedestrian', target: person };
+        const arc = arcHit(player, facing, person.mesh.position);
+        if (!arc) continue;
+        person.knockDown();
+        peopleHit += 1;
+        if (!hit) {
+          hit = {
+            kind: 'pedestrian',
+            target: person,
+            dirX: arc.dirX,
+            dirZ: arc.dirZ,
+            power: 1,
+          };
         }
       }
-      if (!hit) {
-        for (const car of cars) {
-          const dx = car.mesh.position.x - player.mesh.position.x;
-          const dz = car.mesh.position.z - player.mesh.position.z;
-          const dist = Math.hypot(dx, dz);
-          if (dist < 2.6 && dist > 0.01) {
-            const dot = (dx * facingX + dz * facingZ) / dist;
-            if (dot > 0.2) {
-              car.health = Math.max(5, car.health - 3);
-              hit = { kind: 'car', target: car };
-              break;
-            }
-          }
-        }
+      if (peopleHit > 0) {
+        // A landed swing commits Nico: longer recovery, and the extra
+        // bodies in the arc were caught by the follow-through, which
+        // the world applies at reduced power.
+        cooldown = RECOVERY_ON_HIT;
+        hit.peopleHit = peopleHit;
+        return hit;
       }
-      return hit;
+      for (const car of cars) {
+        const arc = arcHit(player, facing, car.mesh.position);
+        if (!arc) continue;
+        car.health = Math.max(5, car.health - 3);
+        cooldown = RECOVERY_ON_HIT;
+        return { kind: 'car', target: car, dirX: arc.dirX, dirZ: arc.dirZ, power: 0.4 };
+      }
+      cooldown = RECOVERY_ON_WHIFF;
+      return null;
     },
   };
 }

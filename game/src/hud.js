@@ -89,6 +89,16 @@ export function createHud() {
       const p = worldToMap(person.mesh.position.x, person.mesh.position.z);
       ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
     }
+    // The Brisa crew during the showdown: red dots, crossed out once down.
+    if (view.rivals) {
+      for (const rival of view.rivals) {
+        const p = worldToMap(rival.x, rival.z);
+        ctx.fillStyle = rival.down ? '#7a7a7a' : '#ff4455';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     // Player arrow, rotated to the current heading.
     const player = worldToMap(view.playerPos.x, view.playerPos.z);
     ctx.save();

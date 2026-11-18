@@ -4,11 +4,13 @@
 // it stages a deterministic scene for screenshots instead of starting play.
 
 import * as THREE from 'three';
-import { createGameState, loadSave, applySave, writeSave, showMessage, MODE_MENU, MODE_PAUSED, MODE_FOOT, MODE_DRIVE, MODE_BUSTED, MODE_WASTED } from './state.js';
+import { createGameState, showMessage, MODE_MENU, MODE_PAUSED, MODE_FOOT, MODE_DRIVE, MODE_BUSTED, MODE_WASTED } from './state.js';
+import { loadSave, applySave, writeSave } from './save.js';
 import { createInput, ACTION_INTERACT, ACTION_PAUSE, ACTION_CONFIRM } from './input.js';
 import { createWorld, createSunlight } from './world.js';
 import { FollowCamera } from './camera.js';
 import { createHud } from './hud.js';
+import { createAudio } from './audio.js';
 import { stageShot } from './shots.js';
 import { createRenderer, createScene, createCamera } from './render.js';
 
@@ -26,11 +28,13 @@ createSunlight(scene);
 const state = createGameState();
 applySave(state, loadSave());
 const world = createWorld(scene, seed);
-// A small handle for automated playtests and curious players in devtools.
-window.__solmarHeat = { state, world };
+if (state.garageOwned) world.unlockGarageCar();
 const followCam = new FollowCamera(camera3d);
 const hud = createHud();
 const input = createInput(canvas);
+const audio = createAudio();
+// A small handle for automated playtests and curious players in devtools.
+window.__solmarHeat = { state, world, audio };
 
 const menuEl = document.getElementById('menu');
 const pauseEl = document.getElementById('pause');
@@ -40,6 +44,7 @@ const bustedText = document.getElementById('busted-text');
 const startButton = document.getElementById('menu-start');
 const resumeButton = document.getElementById('pause-resume');
 const respawnButton = document.getElementById('busted-respawn');
+const pauseProgress = document.getElementById('pause-progress');
 let pendingFine = 0;
 let uiMode = null;
 
@@ -71,22 +76,44 @@ function syncModeUi() {
   bustedEl.style.display = mode === MODE_BUSTED || mode === MODE_WASTED ? 'flex' : 'none';
   hud.setVisible(mode === MODE_FOOT || mode === MODE_DRIVE);
   if (mode === MODE_BUSTED) {
+    // The fine is itemised on the panel — $80 for the stop itself plus
+    // $70 per star on the board when they closed in — so the player can
+    // see exactly what the chase cost and what one more star would have
+    // added. What cash cannot cover is settled in reputation instead
+    // (see the respawn handler), never as a dead end.
     pendingFine = 80 + state.wanted * 70;
     bustedTitle.textContent = 'BUSTED';
-    bustedText.textContent = `The Solmar Patrol boxed you in. The fine is $${pendingFine}, and your name goes in their little book.`;
-    respawnButton.textContent = `Pay $${pendingFine} and walk`;
+    bustedText.textContent = state.wanted > 0
+      ? `The Solmar Patrol boxed you in at ${state.wanted} star${state.wanted === 1 ? '' : 's'}. Fine: $80 + ${state.wanted} × $70 = $${pendingFine}, and your name goes in their little book.`
+      : `The Solmar Patrol boxed you in. Fine: $${pendingFine}, and your name goes in their little book.`;
+    respawnButton.textContent = `Settle $${pendingFine} and walk`;
+    audio.play('busted');
   } else if (mode === MODE_WASTED) {
     pendingFine = 150;
     bustedTitle.textContent = 'WASTED';
-    bustedText.textContent = 'You wake up at the Solmar Clinic with a $150 bill and a spectacular headache.';
-    respawnButton.textContent = 'Pay $150 and walk';
+    bustedText.textContent = 'You wake up at the Solmar Clinic: $150 for the bed, the stitches and the spectacular headache.';
+    respawnButton.textContent = 'Settle $150 and walk';
+    audio.play('busted');
+  }
+  if (mode === MODE_PAUSED && pauseProgress) {
+    pauseProgress.textContent = `Story: ${Math.min(state.missionIndex, 5)} of 5 jobs done · Cash $${state.cash.toLocaleString('en-US')} · Reputation ${state.reputation} · Cars borrowed ${state.carsStolen} · Taxi runs ${state.taxiRuns}`;
   }
   if (mode === MODE_FOOT || mode === MODE_DRIVE) input.requestPointerLock();
   else input.releasePointerLock();
 }
 
 respawnButton.addEventListener('click', () => {
-  state.cash = Math.max(0, state.cash - pendingFine);
+  audio.unlock();
+  audio.play('click');
+  // Settle up: cash pays what it can, and any shortfall comes out of
+  // reputation at a dollar-to-a-point-per-hundred — a broke Nico walks
+  // out owing the street instead of owing a game-over screen.
+  const cashPaid = Math.min(state.cash, pendingFine);
+  const shortfall = pendingFine - cashPaid;
+  state.cash -= cashPaid;
+  if (shortfall > 0) {
+    state.reputation = Math.max(0, state.reputation - Math.ceil(shortfall / 100));
+  }
   pendingFine = 0;
   world.respawnPlayer(state);
   writeSave(state);
@@ -96,6 +123,8 @@ respawnButton.addEventListener('click', () => {
 });
 
 function startPlay() {
+  audio.unlock();
+  audio.play('click');
   previousMode = MODE_FOOT;
   setMode(MODE_FOOT);
   followCam.snapBehind(world.player.heading);
@@ -103,7 +132,11 @@ function startPlay() {
 }
 
 startButton.addEventListener('click', startPlay);
-resumeButton.addEventListener('click', () => setMode(previousMode));
+resumeButton.addEventListener('click', () => {
+  audio.unlock();
+  audio.play('click');
+  setMode(previousMode);
+});
 canvas.addEventListener('click', () => {
   if (state.mode === MODE_FOOT || state.mode === MODE_DRIVE) input.requestPointerLock();
 });
@@ -132,6 +165,7 @@ function handleActions() {
 
 function frame(now, last, view) {
   const dt = Math.min((now - last) / 1000, 0.25);
+  input.beginFrame();
   syncModeUi();
   handleActions();
   if (state.mode === MODE_FOOT || state.mode === MODE_DRIVE) {
@@ -152,6 +186,25 @@ function frame(now, last, view) {
       nextView = world.update(step, state, input, followCam.yaw);
       remaining -= step;
     }
+    // Sound follows the simulation: one-shots the world queued this frame
+    // (pickups, job fanfares, thuds), then the continuous engine and siren.
+    for (const eventName of world.drainEvents()) {
+      audio.play(eventName);
+      if (eventName === 'mission-complete' || eventName === 'finale' || eventName === 'pickup') writeSave(state);
+    }
+    let policeDistance = Infinity;
+    if (nextView) {
+      for (const unit of world.policeUnits) {
+        const dist = Math.hypot(unit.car.mesh.position.x - nextView.playerPos.x, unit.car.mesh.position.z - nextView.playerPos.z);
+        if (dist < policeDistance) policeDistance = dist;
+      }
+    }
+    audio.update(dt, {
+      mode: state.mode,
+      speedKmh: nextView ? nextView.speedKmh : 0,
+      wanted: state.wanted,
+      policeDistance,
+    });
     followCam.update(dt, world.focusPosition(state), state.mode === MODE_DRIVE);
     hud.update(state, nextView);
     renderer.render(scene, camera3d);
@@ -173,19 +226,20 @@ function runShot(name) {
   const staged = stageShot(name, world, state, followCam);
   const focus = staged.car ? staged.car.mesh.position : world.player.mesh.position;
   const view = {
-    objective: name === 'chase'
-      ? 'Mission 3 — Lose the patrol and reach Rayo Garage'
-      : name === 'drive'
-        ? 'Mission 1 — Cruise to the Solmar Marina boardwalk'
-        : 'Free roam — explore Solmar Bay on foot or borrow a car (E)',
-    prompt: name === 'foot' ? 'E — Get in the Rayo Coupe' : '',
+    objective: staged.objective ?? '',
+    prompt: staged.prompt ?? '',
     speedKmh: staged.car ? Math.abs(staged.car.speed) * 3.6 : 0,
-    missionTarget: { x: 22, z: 148 },
+    missionTarget: staged.missionTarget,
     playerPos: focus,
     playerHeading: staged.car ? staged.car.heading : world.player.heading,
     cars: world.allCars,
     police: world.policeUnits.map((unit) => unit.car),
     pedestrians: world.pedestrians,
+    rivals: world.missions.rivals.map((rival) => ({
+      x: rival.mesh.position.x,
+      z: rival.mesh.position.z,
+      down: rival.down,
+    })),
   };
   // Let traffic and pedestrians settle into natural poses before the capture.
   for (let i = 0; i < 90; i += 1) {
