@@ -5,44 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solmar Heat — an open-world day in Solmar Bay</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #79b5d9; font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; }
-  #hud-top-left { position: absolute; top: 14px; left: 16px; max-width: 430px; }
-  #hud-objective { background: rgba(10, 24, 38, 0.62); border-left: 4px solid #ffd23f; padding: 8px 12px; font-size: 15px; line-height: 1.35; border-radius: 0 8px 8px 0; text-shadow: 0 1px 2px #000; }
-  #hud-message { margin-top: 10px; background: rgba(190, 60, 40, 0.78); padding: 7px 12px; font-size: 15px; border-radius: 8px; display: inline-block; }
-  #hud-message:empty { display: none; }
-  #hud-top-right { position: absolute; top: 12px; right: 16px; text-align: right; }
-  #hud-stars { font-size: 26px; letter-spacing: 3px; min-height: 32px; text-shadow: 0 2px 4px rgba(0,0,0,0.6); }
-  #hud-cash { font-size: 24px; font-weight: bold; color: #8dff9a; text-shadow: 0 2px 4px rgba(0,0,0,0.65); }
-  #hud-clock { font-size: 14px; opacity: 0.92; text-shadow: 0 1px 3px #000; }
-  #hud-bars { margin-top: 6px; width: 170px; margin-left: auto; }
-  .bar { height: 9px; background: rgba(0,0,0,0.55); border-radius: 5px; overflow: hidden; margin-top: 4px; border: 1px solid rgba(255,255,255,0.35); }
-  #hud-health-fill { height: 100%; background: linear-gradient(90deg, #ff5f6d, #ffc371); width: 100%; }
-  #hud-armour-fill { height: 100%; background: #6ec3ff; width: 0%; }
-  #hud-bottom-left { position: absolute; left: 16px; bottom: 16px; }
-  #minimap { width: 188px; height: 188px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.75); box-shadow: 0 4px 18px rgba(0,0,0,0.45); background: #274d2e; }
-  #hud-bottom-right { position: absolute; right: 20px; bottom: 18px; text-align: right; }
-  #hud-speed { font-size: 34px; font-weight: bold; text-shadow: 0 2px 5px rgba(0,0,0,0.7); }
-  #hud-prompt { position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); background: rgba(10,24,38,0.72); padding: 9px 18px; border-radius: 20px; font-size: 17px; }
-  #hud-prompt:empty { display: none; }
-  .panel-screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(255,140,66,0.25), rgba(10,30,55,0.55)); z-index: 5; }
-  .panel { background: rgba(8, 22, 38, 0.82); border: 1px solid rgba(255,210,63,0.5); border-radius: 16px; padding: 34px 44px; max-width: 620px; color: #fff; text-align: center; box-shadow: 0 18px 60px rgba(0,0,0,0.5); }
-  .panel h1 { margin: 0 0 4px; font-size: 52px; letter-spacing: 2px; color: #ffd23f; text-shadow: 0 3px 0 #c2432e, 0 6px 18px rgba(0,0,0,0.6); font-style: italic; }
-  .panel h2 { margin: 0 0 14px; font-size: 26px; color: #ffd23f; }
-  .panel p { font-size: 15.5px; line-height: 1.55; color: #dcecf7; }
-  .panel .controls { font-size: 13.5px; color: #a9c6da; line-height: 1.7; }
-  .panel button { pointer-events: auto; margin-top: 16px; background: linear-gradient(180deg, #ffd23f, #ff8c42); border: none; color: #40260a; font-size: 19px; font-weight: bold; padding: 12px 38px; border-radius: 24px; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
-  .panel button:hover { filter: brightness(1.08); }
+html,body{margin:0;height:100%;overflow:hidden;background:#2c4a66;font-family:"Avenir Next","Segoe UI","Trebuchet MS",Verdana,sans-serif}#game{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}#vignette{position:fixed;inset:0;pointer-events:none;z-index:2;background:linear-gradient(180deg,rgba(30,16,8,0.18),rgba(0,0,0,0) 18%),radial-gradient(ellipse at center,rgba(0,0,0,0) 58%,rgba(24,10,4,0.38) 100%)}#hud{position:fixed;inset:0;pointer-events:none;color:#fff;z-index:3}#hud-top-left{position:absolute;top:16px;left:18px;max-width:440px}#hud-objective{background:linear-gradient(100deg,rgba(12,22,36,0.78),rgba(12,22,36,0.55));border-left:4px solid #ffd23f;padding:9px 14px 9px 12px;font-size:15px;font-weight:600;line-height:1.4;border-radius:0 10px 10px 0;text-shadow:0 1px 2px #000;box-shadow:0 6px 18px rgba(0,0,0,0.35);backdrop-filter:blur(6px);letter-spacing:0.2px}#hud-message{margin-top:10px;background:linear-gradient(100deg,rgba(178,44,32,0.88),rgba(150,30,40,0.72));padding:8px 13px;font-size:15px;font-weight:600;border-radius:10px;display:inline-block;box-shadow:0 6px 18px rgba(0,0,0,0.35);text-shadow:0 1px 2px rgba(0,0,0,0.5)}#hud-message:empty{display:none}#hud-top-right{position:absolute;top:14px;right:18px;text-align:right}#hud-stars{font-size:27px;letter-spacing:4px;min-height:34px;color:#ffd23f;text-shadow:0 0 10px rgba(255,190,60,0.65),0 2px 4px rgba(0,0,0,0.65)}#hud-cash{font-size:26px;font-weight:800;color:#8dff9a;letter-spacing:0.5px;font-variant-numeric:tabular-nums;text-shadow:0 2px 5px rgba(0,0,0,0.7)}#hud-clock{font-size:13.5px;font-weight:600;letter-spacing:2.5px;opacity:0.95;text-shadow:0 1px 3px #000}#hud-bars{margin-top:7px;width:176px;margin-left:auto}.bar{height:10px;background:rgba(8,10,14,0.62);border-radius:6px;overflow:hidden;margin-top:5px;border:1px solid rgba(255,255,255,0.4);box-shadow:inset 0 1px 3px rgba(0,0,0,0.6)}#hud-health-fill{height:100%;background:linear-gradient(90deg,#ff5f6d,#ffc371);width:100%;transition:width 0.25s ease}#hud-armour-fill{height:100%;background:linear-gradient(90deg,#4d9fff,#9fd8ff);width:0%;transition:width 0.25s ease}#hud-bottom-left{position:absolute;left:18px;bottom:18px}#minimap{width:188px;height:188px;border-radius:50%;border:3px solid rgba(255,210,63,0.85);box-shadow:0 0 0 2px rgba(10,20,30,0.55),0 8px 24px rgba(0,0,0,0.5);background:#3f6d3c}#hud-bottom-right{position:absolute;right:22px;bottom:20px;text-align:right}#hud-speed{font-size:38px;font-weight:800;font-style:italic;letter-spacing:0.5px;font-variant-numeric:tabular-nums;text-shadow:0 2px 6px rgba(0,0,0,0.75),0 0 18px rgba(255,170,60,0.25)}#hud-prompt{position:absolute;left:50%;bottom:11%;transform:translateX(-50%);background:linear-gradient(100deg,rgba(12,22,36,0.82),rgba(12,22,36,0.62));padding:10px 20px;border-radius:22px;font-size:16.5px;font-weight:600;border:1px solid rgba(255,210,63,0.45);box-shadow:0 8px 22px rgba(0,0,0,0.4);backdrop-filter:blur(6px);text-shadow:0 1px 2px #000;white-space:nowrap}#hud-prompt:empty{display:none}.panel-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:5;background:linear-gradient(180deg,rgba(255,140,66,0.20),rgba(16,24,48,0.42) 62%,rgba(10,14,30,0.58))}.panel{background:linear-gradient(165deg,rgba(13,26,44,0.90),rgba(34,18,38,0.92));border:1px solid rgba(255,196,96,0.55);border-radius:20px;padding:36px 46px 38px;max-width:640px;color:#fff;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.14);backdrop-filter:blur(9px)}.panel .kicker{font-size:12px;font-weight:700;letter-spacing:5px;color:#ffb35c;text-transform:uppercase;margin-bottom:10px}.panel h1{margin:0 0 6px;font-size:56px;font-weight:900;letter-spacing:2.5px;font-style:italic;line-height:1.02;background:linear-gradient(180deg,#ffedb0 5%,#ffc44d 48%,#ff7a3c 92%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;filter:drop-shadow(0 3px 0 rgba(146,44,24,0.9)) drop-shadow(0 8px 20px rgba(0,0,0,0.55))}.panel h2{margin:0 0 14px;font-size:27px;font-weight:800;letter-spacing:1.5px;color:#ffd23f;text-shadow:0 2px 0 rgba(146,44,24,0.8),0 5px 14px rgba(0,0,0,0.5)}.panel p{font-size:15.5px;line-height:1.6;color:#e3eef8;margin:10px 0}.panel .rule{width:64px;height:3px;border-radius:2px;margin:14px auto 4px;background:linear-gradient(90deg,#ffd23f,#ff7a3c)}.panel .controls{font-size:13.5px;color:#b9cfdf;line-height:2.05}.kbd{display:inline-block;padding:1px 8px;margin:0 1px;border-radius:6px;font-weight:700;font-size:12.5px;color:#ffe9a8;background:rgba(255,210,63,0.12);border:1px solid rgba(255,210,63,0.45);box-shadow:0 2px 0 rgba(255,180,60,0.25)}.panel button{pointer-events:auto;margin-top:20px;background:linear-gradient(180deg,#ffd94d,#ff8c42);border:none;color:#46240a;font-size:19px;font-weight:800;letter-spacing:0.6px;text-transform:uppercase;padding:13px 42px;border-radius:26px;cursor:pointer;box-shadow:0 8px 22px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.6);transition:transform 0.12s ease,filter 0.12s ease}.panel button:hover{filter:brightness(1.09);transform:translateY(-1px)}
 </style>
 <script type="importmap">
 { "imports": { "three": "./vendor/three/three.module.min.js" } }
 </script>
 </head>
 <body>
-<canvas id="game" aria-label="Solmar Heat: explore Solmar Bay on foot and by car"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
+<canvas id="game" aria-label="Solmar Heat: explore Solmar Bay — Heights, Old Town and the coast — on foot and by car"></canvas>
+<div id="vignette"></div>
 
 <div id="hud" style="display:none">
   <div id="hud-top-left">
@@ -69,14 +40,17 @@
 
 <div id="menu" class="panel-screen">
   <div class="panel">
+    <div class="kicker">★ Solmar Bay ★</div>
     <h1>SOLMAR HEAT</h1>
     <p><strong>Solmar Bay, one long hot summer.</strong> Nico Vega runs errands for half the
-    marina and owes favours to the other half. Walk the avenues, borrow a car, keep the
-    patrol bored — and when a job flashes gold on your map, take it. Five jobs stand
-    between Nico and owning the Rayo Garage outright.</p>
-    <p class="controls">WASD / arrows — move &amp; drive &nbsp;•&nbsp; Mouse — look (click the game first)<br>
-    E — get in / out of a car &nbsp;•&nbsp; Shift — run &nbsp;•&nbsp; Space — handbrake<br>
-    Esc / P — pause &amp; save &nbsp;•&nbsp; Left mouse — shove &nbsp;•&nbsp; M — sound on / off</p>
+    marina and owes the other half favours. Walk the avenues, borrow a car, keep the
+    patrol bored — and take any job that flashes gold on your map. Five jobs stand
+    between Nico and the Rayo Garage. New this season: the Heights towers and the
+    Old Town lanes are open — a taxi fare can take you there.</p>
+    <div class="rule"></div>
+    <p class="controls"><span class="kbd">WASD</span> move &amp; drive &nbsp;•&nbsp; <span class="kbd">Mouse</span> look — click the game first<br>
+    <span class="kbd">E</span> get in / out of a car &nbsp;•&nbsp; <span class="kbd">Shift</span> run &nbsp;•&nbsp; <span class="kbd">Space</span> handbrake<br>
+    <span class="kbd">Esc</span> pause &amp; save &nbsp;•&nbsp; <span class="kbd">Click</span> shove &nbsp;•&nbsp; <span class="kbd">M</span> sound on / off</p>
     <button id="menu-start">Start the day</button>
   </div>
 </div>

@@ -1,7 +1,18 @@
 // Solmar Heat — a gta6-01 entry (Node 22, standard library only): the game is this
 // directory's game/ folder, a three.js open-world crime game set in the original bay
 // city of Solmar (game/index.html and its ES modules, three.js vendored minified under
-// game/vendor/, no network request), and this program hands it in. The M3 build adds
+// game/vendor/, no network request), and this program hands it in. The second visual
+// round deepens the sky, streaks it with dusk cloud, and lets the long shadows read.
+// The third round adds two districts (Heights towers north, Old Town lanes
+// east/west), a three-ring distance system with actor recycling, and a shadow
+// frustum that follows the player (the old refresh cadence poisoned the map
+// and was removed). The seventh round reframes the screenshots around the
+// new districts, puts Nico in a teal shirt so he reads against the crew,
+// and anchors the sun's shadow frustum to the player on a 4 m grid.
+// The visual-overhaul build repaints the whole bay at golden hour: a gradient sky dome with a sun glow and
+// a low western key light with long shadows, canvas-painted facades with signs and
+// awnings, marked asphalt with zebra crossings, rippled water with foam at the
+// shoreline, shaped cars and rounded human figures, and a graded HUD. The M3 build adds
 // the five-job story chain in game/src/missions.js, the localStorage save in
 // game/src/save.js and the fully synthesised WebAudio soundscape in
 // game/src/audio.js — still zero assets and zero network. The pursuit AI

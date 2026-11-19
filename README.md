@@ -6,12 +6,16 @@
 
 An original open-world crime game for the browser, built for make.fun's gta6-01
 bounty. Welcome to **Solmar Bay**, a sun-soaked coastal city of pastel towers,
-palm-lined avenues and one long hot summer.
+palm-lined avenues — and, new this season, the Heights towers to the north and
+the Old Town lanes east and west — and one long hot summer.
 
 You are **Nico Vega**, who runs errands for half the marina and owes favours to
 the other half. Explore the city on foot and by car, borrow vehicles, keep the
 Solmar Patrol bored, and work five jobs — a marina cruise, a timed delivery, a
-pursuit, a showdown and a finale — until the Rayo Garage is yours.
+pursuit, a showdown and a finale — until the Rayo Garage is yours. The Patrol
+answers crimes with a five-star wanted level and itemised fines; after the
+story, an endless taxi loop pays fares across the bay, and progress persists
+between visits.
 
 ## Play
 
@@ -31,11 +35,12 @@ Chrome. No build step, no network requests: three.js is vendored under
 - `main.ts` — the hand-in program: copies `game/` and `screenshots/` to the
   output directory and writes `dossier.json` with `vendor/makefun-game.ts`.
 - `game/src/` — the game itself, one module per job: `city.js` builds Solmar
-  Bay procedurally, `vehicles.js` and `player.js` move through it,
-  `pedestrians.js` and `police.js` fill it with life, `missions.js` runs the
-  five-job story and the taxi loop, `combat.js` handles Nico's shove,
-  `hud.js` draws the HUD and minimap, `audio.js` synthesises every sound,
-  and `save.js` persists progress to localStorage.
+  Bay procedurally (63 blocks across the Heights and Old Town districts), `world.js` steps the simulation, `vehicles.js` and
+  `player.js` move through it, `pedestrians.js` and `police.js` fill it with
+  life, `missions.js` runs the five-job story and the taxi loop, `combat.js`
+  handles Nico's shove, `figures.js` builds every human, `hud.js` draws the
+  HUD and minimap, `audio.js` synthesises every sound, `render.js` owns the
+  sky, light and renderer, and `save.js` persists progress to localStorage.
 - `screenshots/` — real renders of the game, staged with `?shot=` scenes.
 
 ## License
