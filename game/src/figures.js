@@ -1,5 +1,4 @@
-// Human figures: one shared builder (merged core, limb pivots —
-// five draws per figure; a cap is added by the caller, not here).
+// Human figures: one shared builder (merged core, jointed limbs).
 
 import * as THREE from 'three';
 import { mergeGeometries,paintParts } from './merge.js';
@@ -67,23 +66,28 @@ export function createHumanFigure({ shirt,skin,pants,hair,dress=false }) {
 	}
 
 	function makeLeg(side) {
-		const leg=new THREE.CylinderGeometry(0.068,0.055,0.72,8);
-		leg.translate(0,-0.36,0);
+		const thigh=new THREE.CylinderGeometry(0.076,0.06,0.4,8);
+		thigh.translate(0,-0.2,0);
+		const hip=new THREE.Mesh(paintParts(thigh,dress ? skin : pants),figureMaterial);
+		hip.position.set(side * 0.11,0.82,0);
+		hip.castShadow=true;
+		const shin=new THREE.CylinderGeometry(0.054,0.044,0.38,8);
+		shin.translate(0,-0.19,0);
 		const shoe=new THREE.BoxGeometry(0.13,0.08,0.27);
-		shoe.translate(0,-0.76,0.045);
-		const mesh=new THREE.Mesh(mergeGeometries([
-			paintParts(leg,dress ? skin : pants),paintParts(shoe,0x22242c),
+		shoe.translate(0,-0.4,0.045);
+		const knee=new THREE.Mesh(mergeGeometries([
+			paintParts(shin,dress ? skin : pants),paintParts(shoe,0x22242c),
 		]),figureMaterial);
-		mesh.position.set(side * 0.11,0.8,0);
-		mesh.castShadow=true;
-		group.add(mesh);
-		return mesh;
+		knee.position.set(0,-0.4,0);
+		hip.add(knee);
+		group.add(hip);
+		return { hip,knee };
 	}
 
 	const armL=makeArm(-1);
 	const armR=makeArm(1);
-	const legL=makeLeg(-1);
-	const legR=makeLeg(1);
-	group.userData.limbs={ armL,armR,legL,legR };
+	const left=makeLeg(-1);
+	const right=makeLeg(1);
+	group.userData.limbs={ armL,armR,legL: left.hip,legR: right.hip,shinL: left.knee,shinR: right.knee };
 	return group;
 }

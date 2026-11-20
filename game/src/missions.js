@@ -10,7 +10,6 @@ export const MISSIONS=[
 	{
 		id: 'first-light',
 		title: 'First Light Cruise',
-		giver: 'Mara Sol, marina keeper',
 		intro: 'Mara needs eyes on the marina before the regatta crowd lands.',
 		reward: 150,
 		reputation: 1,
@@ -19,7 +18,6 @@ export const MISSIONS=[
 	{
 		id: 'portside-rush',
 		title: 'Portside Rush',
-		giver: 'Old Tomas, depot foreman',
 		intro: 'Crates of iced shellfish, one impatient hotel kitchen.',
 		reward: 320,
 		reputation: 1,
@@ -28,7 +26,6 @@ export const MISSIONS=[
 	{
 		id: 'heat-run',
 		title: 'Heat Run',
-		giver: 'Mara Sol, off the books',
 		intro: 'A package at Coral Plaza that the patrol would love to meet.',
 		reward: 420,
 		reputation: 2,
@@ -37,7 +34,6 @@ export const MISSIONS=[
 	{
 		id: 'brisa-showdown',
 		title: 'Brisa Showdown',
-		giver: 'Lucia Brisa, hotel manager',
 		intro: 'A rival crew is scaring guests off the Hotel Brisa forecourt.',
 		reward: 500,
 		reputation: 2,
@@ -46,7 +42,6 @@ export const MISSIONS=[
 	{
 		id: 'own-the-rayo',
 		title: 'Own the Rayo',
-		giver: 'Mara Sol, one last favour',
 		intro: 'Drive Mara to sign the Rayo papers — the patrol wants a word first.',
 		reward: 1200,
 		reputation: 3,

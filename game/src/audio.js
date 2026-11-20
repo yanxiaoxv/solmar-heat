@@ -60,30 +60,13 @@ export function createAudio() {
 			sirenOsc.start();
 			sirenLfo.start();
 
-			const noiseLength=ctx.sampleRate * 2;
-			const noiseBuffer=ctx.createBuffer(1,noiseLength,ctx.sampleRate);
-			const data=noiseBuffer.getChannelData(0);
-			for (let i=0; i < noiseLength; i += 1) data[i]=Math.random() * 2 - 1;
+			const nb=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);
+			const nd=nb.getChannelData(0);
+			for (let i=0; i < nd.length; i += 1) nd[i]=Math.random() * 2 - 1;
 			const noise=ctx.createBufferSource();
-			noise.buffer=noiseBuffer;
-			noise.loop=true;
-			const noiseFilter=ctx.createBiquadFilter();
-			noiseFilter.type='lowpass';
-			noiseFilter.frequency.value=420;
-			const noiseGain=ctx.createGain();
-			noiseGain.gain.value=0.014;
-			bayGain=noiseGain;
-			const tide=ctx.createOscillator();
-			tide.frequency.value=0.09;
-			const tideSwing=ctx.createGain();
-			tideSwing.gain.value=0.007;
-			tide.connect(tideSwing);
-			tideSwing.connect(noiseGain.gain);
-			noise.connect(noiseFilter);
-			noiseFilter.connect(noiseGain);
-			noiseGain.connect(master);
-			noise.start();
-			tide.start();
+			noise.buffer=nb; noise.loop=true;
+			bayGain=ctx.createGain(); bayGain.gain.value=0.014;
+			noise.connect(bayGain); bayGain.connect(master); noise.start();
 		} catch {
 			ctx=null;
 		}
@@ -132,32 +115,18 @@ export function createAudio() {
 		}
 	}
 
+	const JINGLES={
+		pickup: [[660,0.09,'sine',0.14,0],[880,0.12,'sine',0.14,0.07]],
+		'mission-complete': [[523,0.14,'triangle',0.16,0],[659,0.14,'triangle',0.16,0.1],[784,0.22,'triangle',0.16,0.2]],
+		finale: [[523,0.16,'triangle',0.17,0],[659,0.16,'triangle',0.17,0.11],[784,0.16,'triangle',0.17,0.22],[1046,0.4,'triangle',0.18,0.33],[1318,0.45,'sine',0.1,0.44]],
+		busted: [[392,0.22,'sawtooth',0.1,0,330],[330,0.22,'sawtooth',0.1,0.2,262],[262,0.42,'sawtooth',0.1,0.4,196]],
+		click: [[1150,0.05,'square',0.05,0]],
+	};
 	function play(name) {
 		if (!ctx) return;
-		if (name === 'pickup') {
-			tone(660,0.09,{ type: 'sine',gain: 0.14 });
-			tone(880,0.12,{ type: 'sine',gain: 0.14,delay: 0.07 });
-		} else if (name === 'mission-complete') {
-			tone(523,0.14,{ type: 'triangle',gain: 0.16 });
-			tone(659,0.14,{ type: 'triangle',gain: 0.16,delay: 0.1 });
-			tone(784,0.22,{ type: 'triangle',gain: 0.16,delay: 0.2 });
-		} else if (name === 'finale') {
-			tone(523,0.16,{ type: 'triangle',gain: 0.17 });
-			tone(659,0.16,{ type: 'triangle',gain: 0.17,delay: 0.11 });
-			tone(784,0.16,{ type: 'triangle',gain: 0.17,delay: 0.22 });
-			tone(1046,0.4,{ type: 'triangle',gain: 0.18,delay: 0.33 });
-			tone(1318,0.45,{ type: 'sine',gain: 0.1,delay: 0.44 });
-		} else if (name === 'thud') {
-			thud(1);
-		} else if (name === 'bump') {
-			thud(1.8);
-		} else if (name === 'busted') {
-			tone(392,0.22,{ type: 'sawtooth',gain: 0.1,slideTo: 330 });
-			tone(330,0.22,{ type: 'sawtooth',gain: 0.1,delay: 0.2,slideTo: 262 });
-			tone(262,0.42,{ type: 'sawtooth',gain: 0.1,delay: 0.4,slideTo: 196 });
-		} else if (name === 'click') {
-			tone(1150,0.05,{ type: 'square',gain: 0.05 });
-		}
+		if (name === 'thud') thud(1);
+		else if (name === 'bump') thud(1.8);
+		else for (const [f,s,t,g,d,sl] of JINGLES[name] ?? []) tone(f,s,{ type: t,gain: g,delay: d,slideTo: sl ?? null });
 	}
 
 	function update(dt,info) {
@@ -200,12 +169,6 @@ export function createAudio() {
 		unlock,
 		play,
 		update,
-		get muted() {
-			return muted;
-		},
-		get running() {
-			return ctx !== null && ctx.state === 'running';
-		},
 		get contextState() {
 			return ctx ? ctx.state : 'none';
 		},

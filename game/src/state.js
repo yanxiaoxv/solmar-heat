@@ -1,6 +1,4 @@
 // Shared state: money, wanted, health, story.
-// Shared timers — one object, no private copies.
-// Persistence lives in save.js.
 
 export const MODE_FOOT='foot';
 export const MODE_DRIVE='drive';

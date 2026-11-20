@@ -36,15 +36,9 @@ export function applySave(state,save) {
 
 	if (Number.isFinite(save.cash)) state.cash=save.cash;
 	if (Number.isFinite(save.reputation)) state.reputation=save.reputation;
-	if (Number.isFinite(save.missionIndex)) {
-		state.missionIndex=Math.max(0,Math.min(5,Math.floor(save.missionIndex)));
-	}
-	if (Number.isFinite(save.missionStage)) {
-		state.missionStage=Math.max(0,Math.min(2,Math.floor(save.missionStage)));
-	}
-	if (Number.isFinite(save.rivalsDown)) {
-		state.rivalsDown=Math.max(0,Math.min(3,Math.floor(save.rivalsDown)));
-	}
+	if (Number.isFinite(save.missionIndex)) state.missionIndex=Math.max(0,Math.min(5,Math.floor(save.missionIndex)));
+	if (Number.isFinite(save.missionStage)) state.missionStage=Math.max(0,Math.min(2,Math.floor(save.missionStage)));
+	if (Number.isFinite(save.rivalsDown)) state.rivalsDown=Math.max(0,Math.min(3,Math.floor(save.rivalsDown)));
 	if (Number.isFinite(save.carsStolen)) state.carsStolen=save.carsStolen;
 	if (Number.isFinite(save.taxiRuns)) state.taxiRuns=save.taxiRuns;
 	if (save.garageOwned === true) state.garageOwned=true;

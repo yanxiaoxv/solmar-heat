@@ -1,4 +1,4 @@
-// Solmar Heat — boot and main loop. ?shot= stages a scene.
+// Solmar Heat — boot and main loop.
 
 import * as THREE from 'three';
 import { createGameState,showMessage,MODE_MENU,MODE_PAUSED,MODE_FOOT,MODE_DRIVE,MODE_BUSTED,MODE_WASTED } from './state.js';
@@ -8,11 +8,9 @@ import { createWorld,createSunlight,anchorSunlight } from './world.js';
 import { FollowCamera } from './camera.js';
 import { createHud } from './hud.js';
 import { createAudio } from './audio.js';
-import { stageShot } from './shots.js';
 import { createRenderer,createScene,createCamera } from './render.js';
 
 const params=new URLSearchParams(window.location.search);
-const shotName=params.get('shot');
 const seedParam=Number.parseInt(params.get('seed') ?? '',10);
 const seed=Number.isInteger(seedParam) ? seedParam : 7;
 
@@ -27,7 +25,7 @@ applySave(state,loadSave());
 const world=createWorld(scene,seed);
 if (state.garageOwned) world.unlockGarageCar();
 const followCam=new FollowCamera(camera3d);
-const hud=createHud();
+const hud=createHud(world.city.decor);
 const input=createInput(canvas);
 const audio=createAudio();
 window.__solmarHeat={ state,world,audio,camera: camera3d,followCam };
@@ -206,48 +204,5 @@ function frame(now,last,view) {
 	}
 }
 
-function runShot(name) {
-	hud.setVisible(name !== 'menu');
-	menuEl.style.display=name === 'menu' ? 'flex' : 'none';
-	pauseEl.style.display='none';
-	const staged=stageShot(name,world,state,followCam);
-	const focus=staged.car ? staged.car.mesh.position : world.player.mesh.position;
-	const view={
-		objective: staged.objective ?? '',
-		prompt: staged.prompt ?? '',
-		speedKmh: staged.car ? Math.abs(staged.car.speed) * 3.6 : 0,
-		missionTarget: staged.missionTarget,
-		playerPos: focus,
-		playerHeading: staged.car ? staged.car.heading : world.player.heading,
-		cars: world.allCars,
-		police: world.policeUnits.map((unit) => unit.car),
-		pedestrians: world.pedestrians,
-		rivals: world.missions.rivals.map((rival) => ({
-			x: rival.mesh.position.x,
-			z: rival.mesh.position.z,
-			down: rival.down,
-		})),
-	};
-	for (let i=0; i < 90; i += 1) {
-		for (const car of world.traffic) car.updateTraffic(1 / 30,world.traffic);
-		for (const person of world.pedestrians) person.update(1 / 30,null);
-	}
-	if (staged.car) staged.car.drive(0.016,0.4,0,false,world.city.colliders);
-	followCam.update(0.016,focus,Boolean(staged.car));
-	hud.update(state,view);
-	anchorSunlight(sun,focus);
-
-	renderer.render(scene,camera3d);
-	requestAnimationFrame(() => {
-		hud.update(state,view);
-		renderer.render(scene,camera3d);
-		window.__shotReady=true;
-	});
-}
-
-if (shotName) {
-	runShot(shotName);
-} else {
-	setMode(MODE_MENU);
-	requestAnimationFrame((t) => frame(t,t,null));
-}
+setMode(MODE_MENU);
+requestAnimationFrame((t) => frame(t,t,null));

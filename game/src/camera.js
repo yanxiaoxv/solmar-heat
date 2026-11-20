@@ -1,5 +1,4 @@
-// Third-person camera: mouse orbit, eased.
-// pin it to an exact pose.
+// Third-person camera: mouse orbit, eased; pin() holds an exact pose.
 
 import * as THREE from 'three';
 

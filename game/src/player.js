@@ -1,6 +1,4 @@
-// The player, Nico Vega: teal shirt and white cap — the only
-// teal in the city, so he reads against the Brisa crew's red.
-// Walks, runs, shoves; in a car the DriveCar takes over.
+// The player, Nico Vega: teal shirt, white cap.
 
 import * as THREE from 'three';
 import { resolveCollisions } from './city.js';
@@ -74,12 +72,14 @@ export class Player {
 		this.mesh.rotation.y=this.heading;
 
 		if (this.moving) this.walkPhase += dt * (running ? 11 : 8);
-		const swing=this.moving ? Math.sin(this.walkPhase) * 0.6 : 0;
-		const { armL,armR,legL,legR }=this.mesh.userData.limbs;
+		const swing=this.moving ? Math.sin(this.walkPhase) * (running ? 0.85 : 0.66) : 0;
+		const { armL,armR,legL,legR,shinL,shinR }=this.mesh.userData.limbs;
 		armL.rotation.x=swing;
 		armR.rotation.x=-swing;
 		legL.rotation.x=-swing;
 		legR.rotation.x=swing;
+		shinL.rotation.x=this.moving ? Math.max(0,Math.sin(this.walkPhase)) * 0.9 : 0;
+		shinR.rotation.x=this.moving ? Math.max(0,-Math.sin(this.walkPhase)) * 0.9 : 0;
 		if (!this.moving) {
 			armL.rotation.x *= 0.8;
 			armR.rotation.x *= 0.8;

@@ -1,7 +1,7 @@
 // World sim: city, player, cars, peds, stepped per frame.
 
 import * as THREE from 'three';
-import { buildCity,ROAD_X,ROAD_Z } from './city.js';
+import { buildCity } from './city.js';
 import { Player } from './player.js';
 import { DriveCar,createParkedCars,createTraffic,nearestCar } from './vehicles.js';
 import { createPedestrians,scareCrowd } from './pedestrians.js';
@@ -13,8 +13,10 @@ import { SUN_COLOR,SUN_DIRECTION,SUN_INTENSITY,SHADOW_HALF,RING_NEAR,RING_MID,RI
 
 export function createWorld(scene,seed=7) {
 	const city=buildCity(scene,seed);
-	const player=new Player(scene,-22 + 4,-14);
+	const player=new Player(scene,-18,-14);
 	const parkedCars=createParkedCars(scene);
+	
+	
 	const traffic=createTraffic(scene);
 	const pedestrians=createPedestrians(scene,22);
 	const policeUnits=[];
@@ -33,7 +35,7 @@ export function createWorld(scene,seed=7) {
 	function spawnGoldCar() {
 		if (goldCarSpawned) return;
 		goldCarSpawned=true;
-		const gold=new DriveCar('sport',0xf7c873,66 + 3.1,-52,0);
+		const gold=new DriveCar('sport',0xf7c873,74,-61.1,Math.PI / 2);
 		scene.add(gold.mesh);
 		parkedCars.push(gold);
 		carsChanged();
@@ -208,7 +210,7 @@ export function createWorld(scene,seed=7) {
 			if (car) prompt=`E — Get in the ${car.spec.label}`;
 		} else if (state.mode === MODE_DRIVE && currentCar) {
 			const axis=input.moveAxis();
-			const speed=currentCar.drive(dt,-axis.z,axis.x,input.handbrake(),city.colliders);
+			const speed=currentCar.drive(dt,-axis.z,-axis.x,input.handbrake(),city.colliders);
 			speedKmh=speed * 3.6;
 			state.topSpeed=Math.max(state.topSpeed,speedKmh);
 			prompt='E — Step out';
@@ -347,7 +349,7 @@ export function createWorld(scene,seed=7) {
 		};
 		for (let i=policeUnits.length - 1; i >= 0; i -= 1) {
 			const unit=policeUnits[i];
-			unit.update(dt,target,city.colliders,state.wanted,{ x: ROAD_X,z: ROAD_Z });
+			unit.update(dt,target,city.colliders,state.wanted);
 			if (unit.gaveUp) {
 				unit.dispose(scene);
 				policeUnits.splice(i,1);
@@ -433,7 +435,7 @@ export function createWorld(scene,seed=7) {
 		lastHealth=100;
 		crimePrompt='';
 		missions.onRespawn();
-		player.placeAt(-22 + 6,-16,Math.PI);
+		player.placeAt(-16,-16,Math.PI);
 		player.setVisible(true);
 		state.mode=MODE_FOOT;
 	}

@@ -12,12 +12,13 @@ export const CAR_KINDS={
 	police: { length: 4.5,width: 1.95,height: 0.6,topSpeed: 42,accel: 20,grip: 3.8,label: 'Solmar Patrol' },
 };
 
-const PAINT_COLORS=[0xe84f6a,0x39b5c4,0xf7c873,0xf2f2f2,0x33415c,0x7bc47f,0xff8c42,0xb388eb];
+const PAINT_COLORS=[0xe84f6a,0x39b5c4,0xf7c873,0xf2f2f2,0xb3271e,0xd9261c,0xff8c42,0xd9a441];
 
 const glassMaterial=new THREE.MeshPhongMaterial({ color: 0x18293e,shininess: 140,specular: 0xaaccee });
 const trimMaterial=new THREE.MeshLambertMaterial({ color: 0x1d1f26 });
 const chromeMaterial=new THREE.MeshPhongMaterial({ color: 0xd8dde6,shininess: 120 });
 const lightMaterial=new THREE.MeshBasicMaterial({ color: 0xfff0b3 });
+const goldMaterial=new THREE.MeshPhongMaterial({ color: 0xd9a441,shininess: 90,specular: 0xffe9a8 });
 const tailMaterial=new THREE.MeshBasicMaterial({ color: 0xff3b4e });
 
 function makePatrolDecal() {
@@ -33,10 +34,7 @@ function makePatrolDecal() {
 	ctx.fillStyle='#123a5c';
 	ctx.font='bold 34px Verdana, sans-serif';
 	ctx.textAlign='center';
-	ctx.fillText('PATROL',128,52);
-	ctx.font='bold 17px Verdana, sans-serif';
-	ctx.fillStyle='#c99327';
-	ctx.fillText('★ SOLMAR ★',128,78);
+	ctx.fillText('PATROL',128,58);
 	const texture=new THREE.CanvasTexture(canvas);
 	texture.colorSpace=THREE.SRGBColorSpace;
 	return new THREE.MeshBasicMaterial({ map: texture });
@@ -169,6 +167,8 @@ export function createCarMesh(kind,color) {
 		}
 	}
 	if (kind === 'sport') part(tailMaterial,w * 0.8,0.11,0.06,0,0.78,-l / 2 - 0.13);
+	for (const sx of [-1,1]) part(goldMaterial,0.03,0.09,l * 0.7,sx * (w / 2 + 0.01),0.98,0);
+	part(chromeMaterial,0.46,0.12,0.03,0,0.6,-l / 2 - 0.14);
 
 	for (const bucket of buckets.values()) {
 		const mesh=new THREE.Mesh(mergeGeometries(bucket.geos),bucket.material);
@@ -327,20 +327,20 @@ export class TrafficCar extends DriveCar {
 export function createParkedCars(scene) {
 	const cars=[];
 	const spots=[
-		['sport',0xe84f6a,-22 + 3.1,-44,0],
-		['sedan',0x39b5c4,18.9,30,Math.PI],
-		['sedan',0xf7c873,66 + 3.1,88,0],
-		['van',0xf2f2f2,-62.9,-88,Math.PI],
-		['sport',0x33415c,106.9,-30,Math.PI],
-		['sedan',0x7bc47f,-25.1,96,Math.PI],
-		['van',0xff8c42,44,110 - 3.1,Math.PI / 2],
-		['sedan',0xb388eb,-88,-66 + 3.1,-Math.PI / 2],
-		['sedan',0x4a6fa5,-154 + 3.1,-96,0],
-		['sport',0xd1603d,154 - 3.1,-120,Math.PI],
-		['van',0x8a93a5,-154 + 3.1,64,0],
-		['sedan',0x6a994e,154 - 3.1,20,Math.PI],
-		['sedan',0xc9a227,-60,-154 + 3.1,Math.PI / 2],
-		['sport',0x5b8c5a,84,-154 - 3.1,-Math.PI / 2],
+		['sport',0xe84f6a,-15.1,-44,3.14],
+		['sedan',0x39b5c4,12.9,30,0],
+		['sedan',0xf7c873,70,67.1,-1.57],
+		['van',0xf2f2f2,-68.9,-80,0],
+		['sport',0x33415c,95.1,-44,0],
+		['sedan',0x7bc47f,-21.1,96,3.14],
+		['van',0xff8c42,44,112.9,1.57],
+		['sedan',0xb388eb,-88,-61.1,1.57],
+		['sedan',0x4a6fa5,-194.9,-96,0],
+		['sport',0xd1603d,152.9,-120,3.14],
+		['van',0x8a93a5,-173.7,64,0],
+		['sedan',0x6a994e,152.9,20,3.14],
+		['sedan',0xc9a227,-60,-154.9,1.57],
+		['sport',0x5b8c5a,84,-161.1,-1.57],
 	];
 	for (const [kind,color,x,z,heading] of spots) {
 		const car=new DriveCar(kind,color,x,z,heading);
