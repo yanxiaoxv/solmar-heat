@@ -1,4 +1,6 @@
-// World sim: city, player, cars, peds, stepped per frame.
+// The world step: city, Nico, traffic, pedestrians, the Patrol and
+// the story, advanced together. main.js owns the frame; this module
+// owns everything inside it.
 
 import * as THREE from 'three';
 import { buildCity } from './city.js';
@@ -9,507 +11,360 @@ import { PoliceUnit,spawnPointNear } from './police.js';
 import { createCombat } from './combat.js';
 import { createMissions } from './missions.js';
 import { MODE_DRIVE,MODE_FOOT,MODE_BUSTED,MODE_WASTED,addWanted,showMessage } from './state.js';
-import { SUN_COLOR,SUN_DIRECTION,SUN_INTENSITY,SHADOW_HALF,RING_NEAR,RING_MID,RING_FAR,RING_MID_STEP,RECYCLE_SECONDS } from './config.js';
+import { SUN_COLOR,SUN_DIRECTION,SUN_INTENSITY,SHADOW_HALF,RING_MID,RING_FAR,RING_MID_STEP,RECYCLE_SECONDS } from './config.js';
 
-export function createWorld(scene,seed=7) {
+const SPAWN_X=-18;
+const SPAWN_Z=-14;
+const GOLD_COLOR=0xd8a928;
+const INTERACT_RANGE=3.8;
+
+export function createWorld(scene,seed=7,hooks={}) {
 	const city=buildCity(scene,seed);
-	const player=new Player(scene,-18,-14);
+	const player=new Player(scene,SPAWN_X,SPAWN_Z);
 	const parkedCars=createParkedCars(scene);
-	
-	
-	const traffic=createTraffic(scene);
-	const pedestrians=createPedestrians(scene,22);
-	const policeUnits=[];
+	const trafficCars=createTraffic(scene);
+	const pedestrians=createPedestrians(scene);
 	const combat=createCombat();
-	const pendingEvents=[];
-	let crimeCooldown=0;
-	let runoverCooldown=0;
-	let ramCooldown=0;
-	let spawnClock=0;
-	let hideNoticeShown=false;
-	let calmSeconds=0;
-	let lastHealth=100;
-	let crimePrompt='';
-	let goldCarSpawned=false;
+	const missions=createMissions(scene,hooks);
+	const policeUnits=[];
 
-	function spawnGoldCar() {
-		if (goldCarSpawned) return;
-		goldCarSpawned=true;
-		const gold=new DriveCar('sport',0xf7c873,74,-61.1,Math.PI / 2);
-		scene.add(gold.mesh);
-		parkedCars.push(gold);
-		carsChanged();
-	}
-
-	const missions=createMissions(scene,{ onGarageOwned: spawnGoldCar });
-
+	let currentCar=null;
 	let allCarsCache=null;
-	function getAllCars() {
-		if (!allCarsCache) {
-			allCarsCache=[...parkedCars,...traffic,...policeUnits.map((unit) => unit.car)];
+	let spawnTimer=2.2;
+	let ringTimer=0;
+	let recycleTimer=0;
+	let goldSpawned=false;
+	let lastFootSpeed=0;
+	let prevAttack=false;
+	let bustInfo=null;
+
+	function allCars() {
+		if (!allCarsCache || allCarsCache.length !== parkedCars.length + trafficCars.length) {
+			allCarsCache=parkedCars.concat(trafficCars);
 		}
 		return allCarsCache;
 	}
-	function carsChanged() {
-		allCarsCache=null;
+	function focus() {
+		return currentCar ? currentCar.mesh.position : player.mesh.position;
+	}
+	function focusHeading() {
+		return currentCar ? currentCar.heading : player.heading;
+	}
+	function focusSpeed() {
+		return currentCar ? currentCar.speed : lastFootSpeed;
 	}
 
-	let currentCar=null;
-	let driveHintShown=false;
+	function enterCar(car,state,camera) {
+		currentCar=car;
+		state.mode=MODE_DRIVE;
+		player.setVisible(false);
+		player.mesh.position.copy(car.mesh.position);
+		if (!car.owned) state.carsStolen += 1;
+		showMessage(state,'WASD drives, Space is the handbrake, E steps out.');
+		hooks.play?.('click');
+		if (camera) camera.snapBehind(car.heading);
+	}
+	function exitCar(state,camera) {
+		const car=currentCar;
+		const sideX=Math.cos(car.heading);
+		const sideZ=-Math.sin(car.heading);
+		player.placeAt(car.mesh.position.x + sideX * 1.7,car.mesh.position.z + sideZ * 1.7,car.heading);
+		player.setVisible(true);
+		currentCar=null;
+		state.mode=MODE_FOOT;
+		if (camera) camera.snapBehind(player.heading);
+	}
+	// Shot staging and tests enter without the fanfare.
+	function enterCarNow(car,state) {
+		currentCar=car;
+		state.mode=MODE_DRIVE;
+		player.setVisible(false);
+		player.mesh.position.copy(car.mesh.position);
+	}
 
-	function ringStep(actor,dt,focus,step) {
-		const dx=actor.mesh.position.x - focus.x;
-		const dz=actor.mesh.position.z - focus.z;
-		const d2=dx * dx + dz * dz;
-		if (d2 > RING_MID * RING_MID) {
-			actor.mesh.visible=false;
+	function clearPolice() {
+		for (const unit of policeUnits) unit.dispose(scene);
+		policeUnits.length=0;
+	}
+	function spawnPolice(x,z,heading) {
+		const unit=new PoliceUnit(scene,x,z,heading);
+		policeUnits.push(unit);
+		return unit;
+	}
+
+	function updatePolice(dt,state) {
+		const f=focus();
+		if (state.wanted <= 0) {
+			if (policeUnits.length) clearPolice();
 			return;
 		}
-		actor.mesh.visible=true;
-		if (d2 <= RING_NEAR * RING_NEAR) {
-			actor._lodAcc=0;
-			step(dt);
-			return;
+		spawnTimer -= dt;
+		const desired=Math.min(state.wanted,5);
+		if (policeUnits.length < desired && spawnTimer <= 0) {
+			spawnTimer=3.2;
+			const sp=spawnPointNear(f,policeUnits.length);
+			spawnPolice(sp.x,sp.z,sp.heading);
 		}
-		actor._lodAcc=(actor._lodAcc || 0) + dt;
-		if (actor._lodAcc >= RING_MID_STEP) {
-			step(actor._lodAcc);
-			actor._lodAcc=0;
-		}
-	}
-
-	function applyZoneRings(focus) {
-		for (const zone of city.zones) {
-			const dx=Math.max(zone.minX - focus.x,0,focus.x - zone.maxX);
-			const dz=Math.max(zone.minZ - focus.z,0,focus.z - zone.maxZ);
-			const dist=Math.hypot(dx,dz);
-			const shouldShow=dist <= RING_FAR;
-			if (zone.visible !== shouldShow) {
-				zone.visible=shouldShow;
-				for (const mesh of zone.meshes) mesh.visible=shouldShow;
-			}
-			const shadows=dist <= RING_MID;
-			if (zone.shadowOn !== shadows) {
-				zone.shadowOn=shadows;
-				for (const mesh of zone.meshes) if (mesh.userData.casts) mesh.castShadow=shadows;
-			}
-		}
-	}
-
-	let recycleClock=0;
-	function recycleFarActors(dt,focus) {
-		recycleClock += dt;
-		if (recycleClock < RECYCLE_SECONDS) return;
-		recycleClock=0;
-		for (const car of traffic) {
-			const dx=car.mesh.position.x - focus.x;
-			const dz=car.mesh.position.z - focus.z;
-			if (dx * dx + dz * dz > RING_MID * RING_MID) car.respawnNear(focus.x,focus.z);
-		}
-		for (const person of pedestrians) {
-			const dx=person.mesh.position.x - focus.x;
-			const dz=person.mesh.position.z - focus.z;
-			if (dx * dx + dz * dz > RING_MID * RING_MID) person.respawnNear(focus.x,focus.z);
-		}
-	}
-
-	function focusPosition(state) {
-		if (state.mode === MODE_DRIVE && currentCar) return currentCar.mesh.position;
-		return player.mesh.position;
-	}
-
-	function focusHeading(state) {
-		if (state.mode === MODE_DRIVE && currentCar) return currentCar.heading;
-		return player.heading;
-	}
-
-	function handleInteract(state) {
-		if (state.mode === MODE_FOOT) {
-			const car=nearestCar(getAllCars(),player.mesh.position,3.4);
-			if (!car) return false;
-			currentCar=car;
-			car.occupied=true;
-			if (traffic.includes(car)) {
-				addWanted(state,1);
-				state.carsStolen += 1;
-				showMessage(state,'Vehicle taken! The owner called it in.');
-				scareCrowd(pedestrians,car.mesh.position.x,car.mesh.position.z,12);
-				const index=traffic.indexOf(car);
-				traffic.splice(index,1);
-				carsChanged();
-			} else if (!car.everDriven) {
-				state.carsStolen += 1;
-				showMessage(state,`${car.spec.label} borrowed. Try not to scratch it.`);
-			}
-			car.everDriven=true;
-			player.setVisible(false);
-			state.mode=MODE_DRIVE;
-			if (!driveHintShown) {
-				driveHintShown=true;
-				showMessage(state,'WASD drives, Space is the handbrake, E steps out.',5);
-			}
-			return true;
-		}
-		if (state.mode === MODE_DRIVE && currentCar) {
-			const car=currentCar;
-			car.occupied=false;
-			const sideX=Math.cos(car.heading) * -1.8;
-			const sideZ=Math.sin(car.heading) * 1.8;
-			player.placeAt(car.mesh.position.x + sideX,car.mesh.position.z + sideZ,car.heading);
-			player.setVisible(true);
-			currentCar=null;
-			state.mode=MODE_FOOT;
-			return true;
-		}
-		return false;
-	}
-
-	function resolveCarBumps(state) {
-
-		if (state.mode === MODE_DRIVE && currentCar) {
-			for (const other of getAllCars()) {
-				if (other === currentCar) continue;
-				const dx=currentCar.mesh.position.x - other.mesh.position.x;
-				const dz=currentCar.mesh.position.z - other.mesh.position.z;
-				const dist=Math.hypot(dx,dz);
-				if (dist > 0.01 && dist < 3.3) {
-					const push=(3.3 - dist) / dist;
-					currentCar.mesh.position.x += dx * push * 0.7;
-					currentCar.mesh.position.z += dz * push * 0.7;
-					if (Math.abs(currentCar.speed) > 8) {
-						currentCar.health=Math.max(5,currentCar.health - 4);
-						pendingEvents.push('bump');
-						showMessage(state,'Careful! The car is taking damage.');
-					}
-					currentCar.speed *= 0.45;
-				}
-			}
-		}
-		if (state.mode === MODE_FOOT) {
-			for (const car of traffic) {
-				const dx=player.mesh.position.x - car.mesh.position.x;
-				const dz=player.mesh.position.z - car.mesh.position.z;
-				const dist=Math.hypot(dx,dz);
-				if (dist > 0.01 && dist < 1.9) {
-					player.mesh.position.x += (dx / dist) * (1.9 - dist);
-					player.mesh.position.z += (dz / dist) * (1.9 - dist);
-				}
-			}
-		}
-	}
-
-	function update(dt,state,input,cameraYaw) {
-		city.update(dt);
-		let prompt='';
-		let speedKmh=0;
-		let danger=null;
-
-		if (state.mode === MODE_FOOT) {
-			player.updateOnFoot(dt,input.moveAxis(),cameraYaw,input.running(),city.colliders);
-			const car=nearestCar(getAllCars(),player.mesh.position,3.4);
-			if (car) prompt=`E — Get in the ${car.spec.label}`;
-		} else if (state.mode === MODE_DRIVE && currentCar) {
-			const axis=input.moveAxis();
-			const speed=currentCar.drive(dt,-axis.z,-axis.x,input.handbrake(),city.colliders);
-			speedKmh=speed * 3.6;
-			state.topSpeed=Math.max(state.topSpeed,speedKmh);
-			prompt='E — Step out';
-			if (speed > 7) danger={ x: currentCar.mesh.position.x,z: currentCar.mesh.position.z,radius: 8 };
-			player.mesh.position.copy(currentCar.mesh.position);
-		}
-
-		const focus=focusPosition(state);
-		applyZoneRings(focus);
-		for (const car of traffic) ringStep(car,dt,focus,(stepDt) => car.updateTraffic(stepDt,traffic));
-		resolveCarBumps(state);
-		for (const person of pedestrians) ringStep(person,dt,focus,(stepDt) => person.update(stepDt,danger));
-		recycleFarActors(dt,focus);
-		for (const car of parkedCars) {
-			if (car === currentCar) {
-				car.mesh.visible=true;
-				continue;
-			}
-			const dx=car.mesh.position.x - focus.x;
-			const dz=car.mesh.position.z - focus.z;
-			car.mesh.visible=dx * dx + dz * dz <= RING_MID * RING_MID;
-		}
-
-		const missionView=missions.update(dt,state,{
-			focus,
-			player,
-			attacking: input.isAttacking(),
-		});
-		for (const eventName of missionView.events) pendingEvents.push(eventName);
-		updateCrimeAndPolice(dt,state,input);
-
-		return {
-			objective: missionView.objective,
-			prompt: crimePrompt || prompt || missionView.prompt,
-			speedKmh,
-			missionTarget: missionView.missionTarget,
-			playerPos: focus,
-			playerHeading: focusHeading(state),
-			cars: getAllCars(),
-			police: policeUnits.map((unit) => unit.car),
-			pedestrians,
-			rivals: missionView.rivals,
-		};
-	}
-
-	function policeDistanceTo(focus) {
-		let nearest=Infinity;
-		for (const unit of policeUnits) {
-			const dist=Math.hypot(unit.position.x - focus.x,unit.position.z - focus.z);
-			if (dist < nearest) nearest=dist;
-		}
-		return nearest;
-	}
-
-	function patrolCanSee(focus) {
-
-		for (const unit of policeUnits) {
-			const dx=focus.x - unit.position.x;
-			const dz=focus.z - unit.position.z;
-			const dist=Math.hypot(dx,dz);
-			if (dist > 46) continue;
-			let blocked=false;
-			for (let step=1; step <= 5 && !blocked; step += 1) {
-				const px=unit.position.x + (dx * step) / 6;
-				const pz=unit.position.z + (dz * step) / 6;
-				for (const box of city.colliders) {
-					if (px > box.minX - 0.4 && px < box.maxX + 0.4 && pz > box.minZ - 0.4 && pz < box.maxZ + 0.4) {
-						blocked=true;
-						break;
-					}
-				}
-			}
-			if (!blocked) return true;
-		}
-		return false;
-	}
-
-	function updateCrimeAndPolice(dt,state,input) {
-
-		if (crimeCooldown > 0) crimeCooldown -= dt;
-		if (runoverCooldown > 0) runoverCooldown -= dt;
-		if (ramCooldown > 0) ramCooldown -= dt;
-		if (spawnClock > 0) spawnClock -= dt;
-		combat.update(dt);
-		const focus=focusPosition(state);
-		crimePrompt='';
-
-		if (state.mode === MODE_FOOT && input.isAttacking()) {
-			const hit=combat.tryAttack(player,pedestrians,getAllCars());
-			if (hit) {
-				pendingEvents.push(hit.kind === 'car' ? 'bump' : 'thud');
-				if (hit.kind === 'pedestrian') {
-					hit.target.mesh.position.x += hit.dirX * 0.7 * hit.power;
-					hit.target.mesh.position.z += hit.dirZ * 0.7 * hit.power;
-					if (crimeCooldown <= 0 && patrolCanSee(focus)) {
-						crimeCooldown=2.5;
-						addWanted(state,1);
-						showMessage(state,'The patrol saw that shove! Wanted level up.');
-					}
-				}
-			}
-		}
-
-		if (state.mode === MODE_DRIVE && currentCar && Math.abs(currentCar.speed) > 4) {
-			for (const person of pedestrians) {
-				const dist=Math.hypot(person.mesh.position.x - focus.x,person.mesh.position.z - focus.z);
-				if (dist < 1.6 && person.fallTimer <= 0) {
-					person.knockDown();
-					if (runoverCooldown <= 0) {
-						runoverCooldown=3;
-						addWanted(state,1);
-						showMessage(state,'You hit a pedestrian! The patrol is coming.');
-					}
-				}
-			}
-		}
-
-		const desired=Math.min(state.wanted,4);
-		if (policeUnits.length < desired && spawnClock <= 0) {
-			const spot=spawnPointNear(focus,policeUnits.length);
-			policeUnits.push(new PoliceUnit(scene,spot.x,spot.z,spot.heading));
-			carsChanged();
-			spawnClock=0.9;
-			if (policeUnits.length === 1) showMessage(state,'Sirens — the Solmar Patrol is rolling!');
-		}
-		while (policeUnits.length > desired) {
-			const unit=policeUnits.pop();
-			unit.dispose(scene);
-			carsChanged();
-		}
-		const target={
-			x: focus.x,
-			z: focus.z,
-			speed: state.mode === MODE_DRIVE && currentCar ? Math.abs(currentCar.speed) : 0,
-			heading: focusHeading(state),
-		};
+		const target={ x: f.x,z: f.z,heading: focusHeading(),speed: focusSpeed() };
 		for (let i=policeUnits.length - 1; i >= 0; i -= 1) {
 			const unit=policeUnits[i];
 			unit.update(dt,target,city.colliders,state.wanted);
 			if (unit.gaveUp) {
 				unit.dispose(scene);
 				policeUnits.splice(i,1);
-				carsChanged();
+			}
+		}
+		// Out of sight, out of mind: the heat cools when no patrol
+		// car is anywhere near.
+		let nearest=Infinity;
+		for (const unit of policeUnits) {
+			const d=Math.hypot(unit.car.mesh.position.x - f.x,unit.car.mesh.position.z - f.z);
+			if (d < nearest) nearest=d;
+		}
+		if (nearest > 42) {
+			state.hideTimer += dt;
+			if (state.hideTimer >= 14 && state.wanted > 0) {
+				addWanted(state,-1);
+				state.hideTimer=4;
+				if (state.wanted === 0) showMessage(state,'You lost them. The bay forgets, for now.',3.5);
+			}
+		} else {
+			state.hideTimer=0;
+		}
+	}
+
+	function checkBusted(dt,state) {
+		const f=focus();
+		let boxed=false;
+		let closeCount=0;
+		for (const unit of policeUnits) {
+			const d=Math.hypot(unit.car.mesh.position.x - f.x,unit.car.mesh.position.z - f.z);
+			if (d < 9.5) {
+				closeCount += 1;
+				if (Math.abs(unit.car.speed) < 2.5) boxed=true;
+			}
+		}
+		const trapped=state.mode === MODE_FOOT ? boxed : (Math.abs(focusSpeed()) < 1 && closeCount >= 2);
+		if (trapped) state.bustedTimer += dt * 0.55;
+		else state.bustedTimer=Math.max(0,state.bustedTimer - dt * 0.7);
+		if (state.bustedTimer >= 2) {
+			const stars=state.wanted;
+			const fine=80 + stars * 70;
+			state.cash=Math.max(0,state.cash - fine);
+			bustInfo={
+				title: 'BUSTED',
+				text: `The Solmar Patrol boxed you in at ${stars} stars. Fine: $80 + ${stars} × $70 = $${fine}, and your name goes in their little book.`,
+			};
+			endRun(state,MODE_BUSTED);
+			hooks.play?.('busted');
+		}
+	}
+
+	function endRun(state,mode) {
+		if (currentCar) {
+			player.mesh.position.copy(currentCar.mesh.position);
+			player.setVisible(true);
+			currentCar=null;
+		}
+		state.mode=mode;
+		state.wanted=0;
+		state.bustedTimer=0;
+		clearPolice();
+	}
+
+	function checkWasted(state) {
+		if (state.health > 0) return;
+		bustInfo={
+			title: 'WASTED',
+			text: 'The bay got the better of you this time. Walk it off, Nico.',
+		};
+		endRun(state,MODE_WASTED);
+		hooks.play?.('busted');
+	}
+
+	function respawn(state) {
+		state.health=100;
+		state.armour=0;
+		state.mode=MODE_FOOT;
+		state.wanted=0;
+		state.bustedTimer=0;
+		clearPolice();
+		player.placeAt(SPAWN_X,SPAWN_Z,Math.PI);
+		player.setVisible(true);
+		currentCar=null;
+	}
+
+	function updateZones(f) {
+		for (const zone of city.zones) {
+			const dx=Math.max(zone.minX - f.x,0,f.x - zone.maxX);
+			const dz=Math.max(zone.minZ - f.z,0,f.z - zone.maxZ);
+			const dist=Math.hypot(dx,dz);
+			const visible=dist < RING_FAR;
+			const casts=dist < RING_MID;
+			zone.visible=visible;
+			zone.shadowOn=casts;
+			for (const mesh of zone.meshes) {
+				mesh.visible=visible;
+				if (mesh.userData.casts) mesh.castShadow=casts;
+			}
+		}
+	}
+
+	function update(dt,state,input,actions,camera) {
+		city.update(dt);
+		const f=focus();
+		ringTimer -= dt;
+		if (ringTimer <= 0) {
+			ringTimer=RING_MID_STEP;
+			updateZones(f);
+		}
+		// The gold coupe is part of the saved world, not of a play
+		// session: it must exist from the first menu frame after a
+		// reload, before anyone presses Start.
+		if (state.garageOwned && !goldSpawned) {
+			goldSpawned=true;
+			const gold=new DriveCar('coupe',GOLD_COLOR,59.5,-66,Math.PI / 2);
+			gold.owned=true;
+			scene.add(gold.mesh);
+			parkedCars.push(gold);
+		}
+		const playing=state.mode === MODE_FOOT || state.mode === MODE_DRIVE;
+		if (!playing) return buildView(state,null);
+		state.playSeconds += dt;
+
+		const attackNow=input.isAttacking();
+		const attackPressed=attackNow && !prevAttack;
+		prevAttack=attackNow;
+
+		if (state.mode === MODE_FOOT) {
+			lastFootSpeed=player.updateOnFoot(dt,input.moveAxis(),camera.yaw,input.running(),city.colliders);
+			combat.update(dt);
+		} else {
+			const axis=input.moveAxis();
+			currentCar.drive(dt,-axis.z,axis.x,input.handbrake(),city.colliders);
+			player.mesh.position.copy(currentCar.mesh.position);
+			player.heading=currentCar.heading;
+			const pace=Math.abs(currentCar.speed);
+			if (pace > state.topSpeed) state.topSpeed=pace;
+		}
+
+		if (actions & 1) {
+			if (state.mode === MODE_FOOT) {
+				const car=nearestCar(allCars(),player.mesh.position,INTERACT_RANGE);
+				if (car) enterCar(car,state,camera);
+			} else {
+				exitCar(state,camera);
 			}
 		}
 
-		if (state.mode === MODE_FOOT && ramCooldown <= 0) {
-			for (const unit of policeUnits) {
-				const dist=Math.hypot(unit.position.x - focus.x,unit.position.z - focus.z);
-				if (dist < 2.2 && Math.abs(unit.car.speed) > 6) {
-					ramCooldown=1.4;
-					state.health=Math.max(0,state.health - 20);
-					player.mesh.position.x += (focus.x - unit.position.x) * 0.9;
-					player.mesh.position.z += (focus.z - unit.position.z) * 0.9;
-					showMessage(state,'The patrol clipped you! Keep moving or give up distance.');
-					break;
+		for (const car of trafficCars) car.update(dt,f,city.colliders,allCars());
+
+		let danger=null;
+		if (currentCar && Math.abs(currentCar.speed) > 8) {
+			danger={ x: f.x,z: f.z,radius: 10 };
+		}
+		for (const person of pedestrians) person.update(dt,danger);
+		recycleTimer += dt;
+		if (recycleTimer >= RECYCLE_SECONDS) {
+			recycleTimer=0;
+			for (const person of pedestrians) {
+				if (Math.hypot(person.mesh.position.x - f.x,person.mesh.position.z - f.z) > 185) {
+					person.respawnNear(f.x,f.z);
 				}
 			}
 		}
 
-		const seen=state.wanted > 0 && patrolCanSee(focus);
-		if (state.wanted > 0 && !seen) {
-			state.hideTimer += dt;
-			if (state.hideTimer > 3 && !hideNoticeShown) {
-				hideNoticeShown=true;
-				showMessage(state,"They've lost sight of you — stay hidden and the heat fades.");
+		const rivalsBefore=state.rivalsDown;
+		missions.update(dt,{
+			state,
+			focus: { x: f.x,z: f.z },
+			mode: state.mode,
+			attackPressed,
+			playerHeading: player.heading,
+		});
+		if (attackPressed && state.mode === MODE_FOOT && state.rivalsDown === rivalsBefore) {
+			const hit=combat.tryAttack(player,pedestrians,allCars());
+			if (hit) {
+				hooks.play?.(hit.kind === 'car' ? 'bump' : 'thud');
+				if (hit.kind === 'pedestrian') {
+					scareCrowd(pedestrians,f.x,f.z,9);
+					addWanted(state,1);
+					showMessage(state,'Shoving strangers is still a crime here.',2.6);
+				}
 			}
-			if (state.hideTimer > 8) {
-				state.hideTimer=0;
-				hideNoticeShown=false;
-				addWanted(state,-1);
-				showMessage(state,state.wanted === 0 ? 'You lost them. Wanted level cleared.' : 'One star gone — keep out of sight.');
-			}
-		} else {
-			state.hideTimer=0;
-			hideNoticeShown=false;
 		}
 
-		const nearestPolice=policeDistanceTo(focus);
-		const playerSpeed=state.mode === MODE_DRIVE && currentCar ? Math.abs(currentCar.speed) : 0;
-		const cornered=state.wanted > 0 && (
-			(state.mode === MODE_FOOT && nearestPolice < 3.6) ||
-			(state.mode === MODE_DRIVE && playerSpeed < 3 && nearestPolice < 7)
-		);
-		if (cornered) {
-			state.bustedTimer += dt;
-			if (state.bustedTimer > 0.5) crimePrompt='The patrol has you cornered — MOVE!';
-			if (state.bustedTimer >= 1.9) {
-				state.bustedTimer=0;
-				state.mode=MODE_BUSTED;
-			}
-		} else {
-			state.bustedTimer=Math.max(0,state.bustedTimer - dt * 2);
-		}
+		updatePolice(dt,state);
+		checkBusted(dt,state);
+		checkWasted(state);
 
-		if (state.health < lastHealth) calmSeconds=0;
-		else calmSeconds += dt;
-		lastHealth=state.health;
-		if (calmSeconds > 5 && state.health > 0 && state.health < 100) {
-			state.health=Math.min(100,state.health + 1.6 * dt);
-			lastHealth=state.health;
+		let prompt='';
+		if (state.mode === MODE_FOOT) {
+			const car=nearestCar(allCars(),player.mesh.position,INTERACT_RANGE);
+			if (car) prompt=`E — Get in the ${car.name}`;
 		}
-
-		if (state.health <= 0 && state.mode !== MODE_WASTED) {
-			state.mode=MODE_WASTED;
-		}
+		return buildView(state,prompt);
 	}
 
-	function respawnPlayer(state) {
-		if (currentCar) {
-			currentCar.occupied=false;
-			currentCar=null;
-		}
-		while (policeUnits.length > 0) policeUnits.pop().dispose(scene);
-		carsChanged();
-		state.wanted=0;
-		state.hideTimer=0;
-		state.bustedTimer=0;
-		state.health=100;
-		spawnClock=0;
-		calmSeconds=0;
-		lastHealth=100;
-		crimePrompt='';
-		missions.onRespawn();
-		player.placeAt(-16,-16,Math.PI);
-		player.setVisible(true);
-		state.mode=MODE_FOOT;
-	}
-
-	function stagePolice(count,behind) {
-		const focus={ x: behind.x,z: behind.z };
-		while (policeUnits.length < count) {
-			const spot=spawnPointNear(focus,policeUnits.length);
-			policeUnits.push(new PoliceUnit(scene,spot.x,spot.z,spot.heading));
-			carsChanged();
-		}
-		if (policeUnits.length > 0) {
-			const unit=policeUnits[0];
-			const back=8.5;
-			const side=2.1;
-			unit.car.placeAt(
-				behind.x - Math.sin(behind.heading) * back - Math.cos(behind.heading) * side,
-				behind.z - Math.cos(behind.heading) * back + Math.sin(behind.heading) * side,
-				behind.heading,
-			);
-		}
+	function buildView(state,prompt) {
+		const f=focus();
+		return {
+			playerPos: f,
+			playerHeading: focusHeading(),
+			cars: allCars(),
+			police: policeUnits.map((unit) => unit.car),
+			pedestrians,
+			rivals: missions.rivals,
+			missionTarget: missions.target,
+			objective: missions.objectiveText,
+			prompt: prompt ?? '',
+			speedKmh: currentCar ? Math.abs(currentCar.speed) * 1.8 : 0,
+		};
 	}
 
 	return {
 		city,
 		player,
 		parkedCars,
-		traffic,
+		trafficCars,
 		pedestrians,
 		policeUnits,
-		combat,
 		missions,
-		get allCars() { return getAllCars(); },
-		handleInteract,
-		focusPosition,
-		focusHeading,
-		update,
-		respawnPlayer,
-		stagePolice,
-		unlockGarageCar: spawnGoldCar,
-		drainEvents() {
-			const drained=pendingEvents.slice();
-			pendingEvents.length=0;
-			return drained;
-		},
+		combat,
 		get currentCar() { return currentCar; },
+		get bustInfo() { return bustInfo; },
+		update,
+		respawn,
+		enterCarNow,
+		spawnPolice,
+		clearPolice,
 	};
 }
 
-export function createSunlight(scene) {
+// Dusk light that travels with the player: a warm low sun whose
+// shadow frustum stays centred on the action.
+const SUN_VEC=new THREE.Vector3(...SUN_DIRECTION).normalize();
 
+export function createSunlight(scene) {
 	const sun=new THREE.DirectionalLight(SUN_COLOR,SUN_INTENSITY);
-	const dir=new THREE.Vector3(...SUN_DIRECTION).normalize();
-	sun.position.copy(dir).multiplyScalar(210);
 	sun.castShadow=true;
 	sun.shadow.mapSize.set(2048,2048);
-	Object.assign(sun.shadow.camera,{ left: -SHADOW_HALF,right: SHADOW_HALF,top: SHADOW_HALF,bottom: -SHADOW_HALF,near: 20,far: 520 });
-	sun.shadow.camera.updateProjectionMatrix();
+	sun.shadow.camera.left=-SHADOW_HALF;
+	sun.shadow.camera.right=SHADOW_HALF;
+	sun.shadow.camera.top=SHADOW_HALF;
+	sun.shadow.camera.bottom=-SHADOW_HALF;
+	sun.shadow.camera.near=10;
+	sun.shadow.camera.far=460;
 	sun.shadow.bias=-0.0006;
-	sun.shadow.normalBias=0.6;
 	scene.add(sun);
 	scene.add(sun.target);
-	const sky=new THREE.HemisphereLight(0xffd9a6,0x63506b,0.72);
-	scene.add(sky);
-	const ambient=new THREE.AmbientLight(0xffc9a0,0.26);
-	scene.add(ambient);
+	const fill=new THREE.HemisphereLight(0xffd9b0,0x39586a,0.5);
+	scene.add(fill);
 	return sun;
 }
 
 export function anchorSunlight(sun,focus) {
-	const gx=Math.round(focus.x / 4) * 4;
-	const gz=Math.round(focus.z / 4) * 4;
-	const dir=new THREE.Vector3(...SUN_DIRECTION).normalize();
-	sun.target.position.set(gx,0,gz);
-	sun.position.set(gx + dir.x * 210,dir.y * 210,gz + dir.z * 210);
+	sun.position.set(focus.x + SUN_VEC.x * 200,SUN_VEC.y * 200,focus.z + SUN_VEC.z * 200);
+	sun.target.position.set(focus.x,0,focus.z);
 	sun.target.updateMatrixWorld();
 }
