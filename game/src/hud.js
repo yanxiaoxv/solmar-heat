@@ -5,19 +5,19 @@ import { ROADS,RIVER_LINE,RIVER_HALF,LAKE,CHANNEL,MALL,CELL_X,CELL_Z,BRIDGES,bui
 
 const MAP_RANGE=CITY_HALF + 26;
 const STREETS=[
-	['唐人街大道 CHINATOWN AVE',58,-70,Math.PI / 2],['中央綠軸大道 MALL AVE',0,-36,0],
+	['唐人街大道 CHINATOWN AVE',58,-70,Math.PI / 2],['中央綠軸大道 MALL AVE',-88,-36,0],
 	['濱海大道 SEASIDE AVE',40,140,0],
 	['老城大道 OLD TOWN AVE',156,-40,Math.PI / 2],['湖濱環路 LAKE LOOP',-56,60,0],
 	['河濱大道 RIVERBEND AVE',-120,-84,1.2],['斜陽大道 SUNSET DIAG',38,46,0.47],
 	['索爾瑪大道 SOLMAR AVE',-18,66,Math.PI / 2],
 ];
 const MARKS=[
-	...LANDMARKS.map((lm) => [lm.name,lm.x,lm.z,0,'街區地標。']),
+	...LANDMARKS.map((lm) => [lm.name,lm.x,lm.z,0,'街區地標。',lm.id === 'plaza' ? 1 : 0]),
 	['日晷尖塔 SUNDIAL SPIRE',-100,-22,1,'綠軸西端尖塔。'],
 	['大會堂 THE ASSEMBLY',114,-22,2,'綠軸東端大會堂。'],
 	['牌樓 PAIFANG GATE',78,-22,3,'唐人街東牌樓。'],
 	['牌樓 PAIFANG GATE',-86,-22,3,'唐人街西牌樓。'],
-	['夜市 NIGHT MARKET',-40,-30,3,'綠軸南側夜市攤位。'],
+	['夜市 NIGHT MARKET',-40,-30,3,'綠軸南側夜市攤位。',1],
 	['湖心亭 LAKE PAVILION',-56,90,3,'湖心中式涼亭。'],
 ];
 const TINTS={ Heights: '#66707c',Marina: '#7d8f57',Westbank: '#4e7a3e','Lake Solmar': '#4e7a3e','唐人街 Old Town': '#8a5a34','唐人街 The Mall': '#57a047','唐人街 Core': '#86543c' };
@@ -130,7 +130,7 @@ export function createHud(decor={ parks: [],lots: [] }) {
 			ctx.textAlign='center';
 			ctx.fillStyle='rgba(255,255,255,0.95)';
 			ctx.font='bold 21px Verdana, sans-serif';
-			for (const [text,x,z] of [['高地 HEIGHTS',-30,-204],['老城 OLD TOWN',178,-66],['唐人街 CHINATOWN',58,-118],['西岸 WESTBANK',-196,96],['索爾瑪湖 LAKE SOLMAR',-56,128],['碼頭 MARINA',80,132],['中央綠軸 THE MALL',4,-24]]) {
+			for (const [text,x,z] of [['高地 HEIGHTS',-30,-204],['老城 OLD TOWN',178,-66],['唐人街 CHINATOWN',58,-118],['西岸 WESTBANK',-196,96],['索爾瑪湖 LAKE SOLMAR',-56,128],['碼頭 MARINA',80,132],['中央綠軸 THE MALL',4,10]]) {
 				const p=W(x,z);
 				ctx.fillText(text,p[0],p[1]);
 			}
@@ -257,15 +257,22 @@ export function createHud(decor={ parks: [],lots: [] }) {
 		ctx.drawImage(bigBase,(bv.cx - half + MAP_RANGE) * bigScale,(bv.cz - half + MAP_RANGE) * bigScale,half * 2 * bigScale,half * 2 * bigScale,0,0,900,900);
 		ctx.font='bold 13px Verdana, sans-serif';
 		ctx.textAlign='center';
+		const placed=[];
 		for (const m of MARKS) {
 			const p=bigW(m[1],m[2]);
 			if (p[0] < -20 || p[0] > 920 || p[1] < -20 || p[1] > 920) continue;
 			ctx.fillStyle='#ffd23f';
 			mark(ctx,m[3],p[0],p[1]);
+			const w=ctx.measureText(m[0]).width;
+			let ly=m[5] ? p[1] + 24 : p[1] - 11;
+			const box=() => [p[0] - w / 2 - 2,ly - 10,p[0] + w / 2 + 2,ly + 3];
+			let b=box();
+			while (placed.some((q) => b[0] < q[2] && b[2] > q[0] && b[1] < q[3] && b[3] > q[1]) && ly < p[1] + 44) { ly += 15; b=box(); }
+			placed.push(b);
 			ctx.fillStyle='rgba(0,0,0,0.55)';
-			ctx.fillText(m[0],p[0] + 1,p[1] - 10);
+			ctx.fillText(m[0],p[0] + 1,ly + 1);
 			ctx.fillStyle='#ffffff';
-			ctx.fillText(m[0],p[0],p[1] - 11);
+			ctx.fillText(m[0],p[0],ly);
 		}
 		drawMarkers(ctx,bigW,view,true);
 		ctx.fillStyle='#ffffff';
