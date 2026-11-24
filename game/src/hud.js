@@ -12,6 +12,7 @@ const STREETS=[
 	['索爾瑪大道 SOLMAR AVE',-18,66,Math.PI / 2],
 ];
 const MARKS=[
+// Centre-label anchors (map fix): MALL AVE at (-88,-36), THE MALL at (4,10); MARKS labels de-overlap by shifting down (max +44); flag 1 (NIGHT MARKET, Coral Plaza) draws the label below its marker.
 	...LANDMARKS.map((lm) => [lm.name,lm.x,lm.z,0,'街區地標。',lm.id === 'plaza' ? 1 : 0]),
 	['日晷尖塔 SUNDIAL SPIRE',-100,-22,1,'綠軸西端尖塔。'],
 	['大會堂 THE ASSEMBLY',114,-22,2,'綠軸東端大會堂。'],
