@@ -1,3 +1,4 @@
+// police.js — the Solmar Patrol: police drivers routed on the street graph.
 // The Solmar Patrol: graph-routed drivers, no teleports.
 
 import { DriveCar } from './vehicles.js';

@@ -1,3 +1,4 @@
+// network.js — city layout data (river, lake, streets, bridges) and the routing graph.
 // Layout truth: river, lake, streets, bridges, routing graph.
 // Pure geometry, no imports.
 

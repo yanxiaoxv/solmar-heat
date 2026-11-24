@@ -1,3 +1,4 @@
+// missions.js — the story missions: five jobs for Nico Vega, then the endless taxi loop.
 // The story: five jobs for Nico Vega, then the endless taxi loop.
 // Stages advance on arrival; the showdown job fights with the same
 // shove the combat module gives the player.

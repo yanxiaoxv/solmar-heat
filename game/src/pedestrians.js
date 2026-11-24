@@ -1,3 +1,4 @@
+// pedestrians.js — ambient pedestrians walking the city's sidewalks.
 // Pedestrians: 22 strollers on the network's sidewalks.
 
 import { buildGraph,nearestOnGraph } from './network.js';

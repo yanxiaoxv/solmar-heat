@@ -1,3 +1,4 @@
+// render.js — renderer and scene setup (sky, sun, lighting).
 // Renderer/scene setup.
 
 import * as THREE from 'three';

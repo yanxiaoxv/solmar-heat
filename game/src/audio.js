@@ -1,3 +1,4 @@
+// audio.js — procedural WebAudio sound synthesis for the game (no audio files).
 // Procedural audio: WebAudio synth, no files; M mutes.
 
 export function createAudio() {

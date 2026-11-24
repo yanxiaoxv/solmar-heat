@@ -1,3 +1,4 @@
+// serve.ts — a tiny static server for game/ so the entry can be played locally.
 // A tiny static server for game/ (Node 22, standard library only), so an entry can be played
 // locally without a build step: `node serve.ts` serves game/ on http://localhost:8080.
 // `--port 8092` serves on 8092 instead. It sends the MIME types a browser game needs, refuses any path outside game/, and otherwise

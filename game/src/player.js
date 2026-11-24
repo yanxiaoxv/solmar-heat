@@ -1,3 +1,4 @@
+// player.js — the player character, Nico Vega: movement and collision handling.
 // The player, Nico Vega: teal shirt, white cap.
 
 import * as THREE from 'three';

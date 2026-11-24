@@ -1,3 +1,4 @@
+// save.js — the versioned localStorage save record.
 // Save: the one localStorage record, versioned once.
 
 export const SAVE_KEY='solmar-heat-save-v1';

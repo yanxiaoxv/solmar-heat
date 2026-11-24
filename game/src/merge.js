@@ -1,3 +1,4 @@
+// merge.js — merges geometry parts into single meshes.
 // Geometry merging: parts baked into single meshes.
 
 import * as THREE from 'three';

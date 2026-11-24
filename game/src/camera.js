@@ -1,3 +1,4 @@
+// camera.js — third-person follow camera with mouse orbit and eased motion.
 // Third-person camera: mouse orbit, eased; pin() holds an exact pose.
 
 import * as THREE from 'three';

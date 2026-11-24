@@ -1,3 +1,4 @@
+// figures.js — shared builder for jointed human character figures.
 // Human figures: one shared builder (merged core, jointed limbs).
 
 import * as THREE from 'three';

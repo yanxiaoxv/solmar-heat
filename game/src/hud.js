@@ -1,3 +1,4 @@
+// hud.js — on-screen HUD plus the minimap and full city map.
 // HUD + maps: minimap and full city map share one 1:1 painted base.
 
 import { CITY_HALF,districtAt,LANDMARKS } from './city.js';

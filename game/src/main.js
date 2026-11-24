@@ -1,3 +1,4 @@
+// main.js — game entry point: boots the world and runs the frame loop.
 // Solmar Heat entry point: boot the bay, run the frame, work the
 // panels. A ?shot=chase|foot|drive&seed=N URL stages a deterministic
 // scene instead of the menu, for the hand-in screenshots.

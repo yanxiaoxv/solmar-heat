@@ -1,3 +1,4 @@
+// combat.js — the player's melee shove attack (wind-up, swing arc, recovery).
 // Nico's shove: a committed swing (wind-up, arc, recovery).
 
 export const MELEE_RANGE=2.3;

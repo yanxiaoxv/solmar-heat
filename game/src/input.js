@@ -1,3 +1,4 @@
+// input.js — keyboard input state and one-shot action flags.
 // Input: held key set; one-shots queued as flags.
 
 export const ACTION_INTERACT=1;

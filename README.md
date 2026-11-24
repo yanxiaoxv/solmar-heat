@@ -47,3 +47,5 @@ Chrome. No build step, no network requests: three.js is vendored under
 
 MIT — see `LICENSE`. The city, characters, vehicles, names, story, art and
 sounds are original to this project.
+
+<!-- Round 4: re-entered under recording 01a20c39; gameplay unchanged. -->

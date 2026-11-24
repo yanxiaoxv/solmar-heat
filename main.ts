@@ -1,3 +1,4 @@
+// main.ts — hand-in program: stages the game and screenshots, then writes the dossier.
 // Solmar Heat, hand-in program: stage the game and its screenshots
 // into the output directory, then write the dossier the scorer
 // re-derives byte for byte from those same files.

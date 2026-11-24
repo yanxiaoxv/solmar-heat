@@ -1,3 +1,4 @@
+// vehicles.js — vehicle meshes, the arcade driving model, parked cars and traffic.
 // Vehicles: one mesh builder, an arcade driving model, the parked
 // set the city wakes up with, and traffic that works the grid.
 

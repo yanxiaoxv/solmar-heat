@@ -1,3 +1,4 @@
+// random.js — seeded random number generator for deterministic city building.
 // Seeded random: the same seed builds the same city, every load.
 
 export function createSeededRandom(seed) {

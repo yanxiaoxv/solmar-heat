@@ -1,3 +1,4 @@
+// world.js — the world simulation step advancing every actor together.
 // The world step: city, Nico, traffic, pedestrians, the Patrol and
 // the story, advanced together. main.js owns the frame; this module
 // owns everything inside it.

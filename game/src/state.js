@@ -1,3 +1,4 @@
+// state.js — shared game state (money, wanted level, health, story progress).
 // Shared state: money, wanted, health, story.
 
 export const MODE_FOOT='foot';

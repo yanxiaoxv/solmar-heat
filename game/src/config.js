@@ -1,3 +1,4 @@
+// config.js — shared tuning constants (movement, sun, sky, distance rings).
 // Tuning: movement, sun, sky, haze, distance rings.
 
 export const WALK_SPEED=6.2;

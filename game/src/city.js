@@ -1,3 +1,4 @@
+// city.js — procedural geometry for the Solmar Bay city.
 // Procedural Solmar Bay geometry; layout truth is network.js.
 
 import * as THREE from 'three';
